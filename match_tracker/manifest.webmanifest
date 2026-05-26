@@ -1,0 +1,21 @@
+{
+  "name": "LaSalle Stompers — Match Tracker",
+  "short_name": "Stompers",
+  "description": "U10 soccer match-day tracker for the LaSalle Stompers 2016 squad.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "display_override": ["standalone", "fullscreen", "minimal-ui"],
+  "orientation": "portrait",
+  "background_color": "#0d2818",
+  "theme_color": "#0d2818",
+  "categories": ["sports", "productivity"],
+  "lang": "en",
+  "dir": "ltr",
+  "icons": [
+    { "src": "./icon-192.png",          "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "./icon-512.png",          "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "./icon-maskable-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "./icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

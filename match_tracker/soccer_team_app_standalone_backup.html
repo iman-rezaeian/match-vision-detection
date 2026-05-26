@@ -1,0 +1,3852 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Stompers" />
+  <meta name="application-name" content="Stompers" />
+  <meta name="theme-color" content="#0d2818" />
+  <meta name="description" content="LaSalle Stompers 2016 U10 match-day tracker." />
+  <title>LaSalle Stompers 2016 — Match Day</title>
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png" />
+  <link rel="icon" type="image/png" sizes="512x512" href="./icon-512.png" />
+  <link rel="apple-touch-icon" sizes="192x192" href="./icon-192.png" />
+  <link rel="apple-touch-icon" sizes="512x512" href="./icon-512.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Anton&family=Outfit:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/12.13.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/12.13.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/12.13.0/firebase-firestore-compat.js"></script>
+  <style>
+    html, body { background: #fafaf7; overscroll-behavior-y: none; }
+    body { font-family: 'Outfit', system-ui, sans-serif; -webkit-tap-highlight-color: transparent; }
+    .font-display { font-family: 'Anton', system-ui, sans-serif; letter-spacing: 0.03em; }
+    .font-sans-pro { font-family: 'Outfit', system-ui, sans-serif; }
+    .stripes-bg {
+      background-color: #0d2818;
+      background-image:
+        repeating-linear-gradient(135deg, rgba(132,204,22,0.10) 0px, rgba(132,204,22,0.10) 2px, transparent 2px, transparent 14px),
+        linear-gradient(135deg, #0d2818 0%, #11331d 50%, #0d2818 100%);
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script>
+    // ----- Firebase config -----
+    const firebaseConfig = {
+      apiKey: "AIzaSyBVuOKhxN42ZPSHJDeQbiJlB4LIje99L_U",
+      authDomain: "lasalle-stompers.firebaseapp.com",
+      projectId: "lasalle-stompers",
+      storageBucket: "lasalle-stompers.firebasestorage.app",
+      messagingSenderId: "375552869214",
+      appId: "1:375552869214:web:947de33296e3e9abe405cf"
+    };
+    firebase.initializeApp(firebaseConfig);
+    window.fbDb = firebase.firestore();
+    window.fbAuth = firebase.auth();
+    // Offline persistence (so the app survives field wifi)
+    window.fbDb.enablePersistence({ synchronizeTabs: true }).catch(() => {});
+    // Anonymous sign-in (required by security rules)
+    window.fbReady = window.fbAuth.signInAnonymously().then(() => true).catch((err) => {
+      document.getElementById('root').innerHTML =
+        '<div style="padding:2rem;font-family:sans-serif;color:#7f1d1d;background:#fef2f2;border-radius:1rem;margin:2rem;">' +
+        '<h2 style="margin:0 0 0.5rem 0">Firebase setup needed</h2>' +
+        '<p style="margin:0 0 0.5rem 0">Anonymous sign-in is not enabled yet.</p>' +
+        '<p style="margin:0;font-size:0.9em">Firebase Console → Build → Authentication → Sign-in method → Anonymous → Enable</p>' +
+        '<p style="margin:1rem 0 0 0;font-size:0.8em;color:#991b1b">Error: ' + err.message + '</p>' +
+        '</div>';
+      return false;
+    });
+
+    // ----- PWA service worker + install prompt -----
+    // Capture Chrome / Edge / Samsung Internet install prompt so the React app
+    // can fire it from a button. Apple Safari doesn't expose this event — iOS
+    // users get a "Share → Add to Home Screen" hint instead.
+    window.fbDeferredInstall = null;
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      window.fbDeferredInstall = e;
+      window.dispatchEvent(new CustomEvent('stompers:installavailable'));
+    });
+    window.addEventListener('appinstalled', () => {
+      window.fbDeferredInstall = null;
+      window.dispatchEvent(new CustomEvent('stompers:installed'));
+    });
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js').catch(() => {});
+      });
+    }
+  </script>
+
+  <script type="text/babel" data-presets="react">
+    const { useState, useEffect, useMemo } = React;
+
+    // -------- inline icon library (lucide-style) --------
+    const Svg = ({ className = "w-5 h-5", children, ...p }) => (
+      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"
+           fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+           className={className} {...p}>{children}</svg>
+    );
+    const Plus = (p) => <Svg {...p}><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></Svg>;
+    const Users = (p) => <Svg {...p}><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></Svg>;
+    const Trash2 = (p) => <Svg {...p}><polyline points="3 6 5 6 21 6"/><path d="M19 6l-2 14a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/></Svg>;
+    const Edit3 = (p) => <Svg {...p}><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></Svg>;
+    const ChevronLeft = (p) => <Svg {...p}><polyline points="15 18 9 12 15 6"/></Svg>;
+    const ChevronRight = (p) => <Svg {...p}><polyline points="9 18 15 12 9 6"/></Svg>;
+    const PlayCircle = (p) => <Svg {...p}><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/></Svg>;
+    const Undo2 = (p) => <Svg {...p}><path d="M9 14l-4-4 4-4"/><path d="M5 10h11a4 4 0 0 1 0 8h-4"/></Svg>;
+    const X = (p) => <Svg {...p}><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></Svg>;
+    const BarChart3 = (p) => <Svg {...p}><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></Svg>;
+    const Flag = (p) => <Svg {...p}><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></Svg>;
+    const Zap = (p) => <Svg {...p}><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></Svg>;
+
+    // ===== APP CODE BEGINS =====
+
+const EVENT_TYPES = {
+  GOAL:      { id: 'GOAL',      label: 'GOAL',      emoji: '⚽', tone: 'big-green',  requiresPlayer: true,  delta: 'us' },
+  ASSIST:    { id: 'ASSIST',    label: 'ASSIST',    emoji: '🅰️', tone: 'soft-green', requiresPlayer: true },
+  KEY_PASS:  { id: 'KEY_PASS',  label: 'KEY PASS',  emoji: '🔑', tone: 'soft-green', requiresPlayer: true },
+  SAVE:      { id: 'SAVE',      label: 'SAVE',      emoji: '🧤', tone: 'blue',       requiresPlayer: true },
+  SHOT_ON:   { id: 'SHOT_ON',   label: 'SHOT ON',   emoji: '🎯', tone: 'soft-green', requiresPlayer: true },
+  SHOT_OFF:  { id: 'SHOT_OFF',  label: 'SHOT OFF',  emoji: '❌', tone: 'neutral',    requiresPlayer: true },
+  BLOCK:     { id: 'BLOCK',     label: 'BLOCK',     emoji: '🛡️', tone: 'blue',       requiresPlayer: true },
+  BALL_WIN:  { id: 'BALL_WIN',  label: 'BALL WIN',  emoji: '🔥', tone: 'soft-green', requiresPlayer: true },
+  DUEL_WIN:  { id: 'DUEL_WIN',  label: '1V1 WIN',   emoji: '💪', tone: 'soft-green', requiresPlayer: true },
+  DUEL_LOSE: { id: 'DUEL_LOSE', label: '1V1 LOSE',  emoji: '👎', tone: 'soft-red',   requiresPlayer: true },
+  GIVE_GO:   { id: 'GIVE_GO',   label: 'GIVE-GO',   emoji: '🔁', tone: 'soft-green', requiresPlayer: true },
+  GATES:     { id: 'GATES',     label: 'GATE PASS', emoji: '🚪', tone: 'blue',       requiresPlayer: true },
+  TURNOVER:  { id: 'TURNOVER',  label: 'TURNOVER',  emoji: '💨', tone: 'soft-red',   requiresPlayer: true },
+  HOLDS_BALL:{ id: 'HOLDS_BALL',label: 'HOLDS BALL',emoji: '⏳', tone: 'yellow',     requiresPlayer: true },
+  OPP_GOAL:  { id: 'OPP_GOAL',  label: 'OPP GOAL',  emoji: '🚨', tone: 'big-red',    requiresPlayer: false, delta: 'opp' },
+};
+
+const TONE_CLASSES = {
+  'big-green':  'bg-lime-500 hover:bg-lime-600 text-white shadow-lg shadow-lime-500/30 border-lime-600',
+  'big-red':    'bg-red-500 hover:bg-red-600 text-white shadow-lg shadow-red-500/30 border-red-600',
+  'soft-green': 'bg-lime-50 hover:bg-lime-100 text-lime-900 border-lime-200',
+  'soft-red':   'bg-red-50 hover:bg-red-100 text-red-900 border-red-200',
+  'blue':       'bg-sky-50 hover:bg-sky-100 text-sky-900 border-sky-200',
+  'yellow':     'bg-yellow-50 hover:bg-yellow-100 text-yellow-900 border-yellow-300',
+  'purple':     'bg-violet-100 hover:bg-violet-200 text-violet-900 border-violet-300',
+  'neutral':    'bg-stone-50 hover:bg-stone-100 text-stone-900 border-stone-200',
+};
+
+const SEED_ROSTER = [
+  { id: 'p_adam',      name: 'Ben Adam',         number: '3',  position: '' },
+  { id: 'p_sharma',    name: 'Vince Sharma',     number: '5',  position: '' },
+  { id: 'p_cardoso',   name: 'Maverick Cardoso', number: '6',  position: '' },
+  { id: 'p_gibala',    name: 'Liam Gibala',      number: '7',  position: '' },
+  { id: 'p_hahn',      name: 'Ben Hahn',         number: '8',  position: '' },
+  { id: 'p_bowser',    name: 'Nolan Bowser',     number: '9',  position: '' },
+  { id: 'p_yaacoub',   name: 'Khalid Yaacoub',   number: '10', position: '' },
+  { id: 'p_hassoun',   name: 'Issa Hassoun',     number: '11', position: '' },
+  { id: 'p_garland',   name: 'Liam Garland',     number: '14', position: '' },
+  { id: 'p_rezaeian',  name: 'Arian Rezaeian',   number: '15', position: '' },
+  { id: 'p_kerr',      name: 'Alexander Kerr',   number: '16', position: '' },
+  { id: 'p_qian',      name: 'Jason Qian',       number: '17', position: '' },
+  { id: 'p_shallvari', name: 'David Shallvari',  number: '18', position: '' },
+  { id: 'p_duncan',    name: 'Jaedyn Duncan',    number: '19', position: '' },
+  { id: 'p_perrotta',  name: 'Luca Perrotta',    number: '20', position: '' },
+  { id: 'p_zaidan',    name: 'Gabriel Zaidan',   number: '21', position: '' },
+];
+
+const FONT_STYLES = `
+  @import url('https://fonts.googleapis.com/css2?family=Anton&family=Outfit:wght@400;500;600;700;800;900&display=swap');
+  .font-display { font-family: 'Anton', system-ui, sans-serif; letter-spacing: 0.03em; }
+  .font-sans-pro { font-family: 'Outfit', system-ui, sans-serif; }
+  .stripes-bg {
+    background-color: #0d2818;
+    background-image:
+      repeating-linear-gradient(
+        135deg,
+        rgba(132, 204, 22, 0.10) 0px,
+        rgba(132, 204, 22, 0.10) 2px,
+        transparent 2px,
+        transparent 14px
+      ),
+      linear-gradient(135deg, #0d2818 0%, #11331d 50%, #0d2818 100%);
+  }
+`;
+
+function uid() {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+}
+
+// ----- Firestore data layer -----
+// Single shared team — everyone with the URL sees the same data.
+const TEAM_DOC_ID = 'main';
+function teamDoc() { return window.fbDb.collection('teams').doc(TEAM_DOC_ID); }
+function gamesCol() { return teamDoc().collection('games'); }
+
+function formatClock(seconds) {
+  const m = Math.floor(seconds / 60).toString().padStart(2, '0');
+  const s = Math.floor(seconds % 60).toString().padStart(2, '0');
+  return `${m}:${s}`;
+}
+
+function computeElapsed(game) {
+  if (game.elapsedAtPause === undefined) {
+    return game.startedAt ? Math.floor((Date.now() - game.startedAt) / 1000) : 0;
+  }
+  if (game.clockRunning && game.segmentStartedAt) {
+    return game.elapsedAtPause + Math.floor((Date.now() - game.segmentStartedAt) / 1000);
+  }
+  return game.elapsedAtPause;
+}
+
+function onFieldAt(game, atTs = Date.now()) {
+  const onField = new Set(game.startingLineup || []);
+  const subs = (game.events || [])
+    .filter(e => e.type === 'SUB' && e.at <= atTs)
+    .sort((a, b) => a.at - b.at);
+  for (const sub of subs) {
+    if (sub.playerId) onField.delete(sub.playerId);
+    if (sub.subOnPlayerId) onField.add(sub.subOnPlayerId);
+  }
+  return onField;
+}
+
+// Resolve who is the goalie at a given timestamp by walking game.gkChanges.
+// `game.gkPlayerId` is the starting GK; `game.gkChanges = [{at, gkPlayerId}, …]`
+// captures every swap mid-match. Returns the player id (or null if none set).
+function currentGKAt(game, atTs = Date.now()) {
+  if (!game) return null;
+  let current = game.gkPlayerId || null;
+  const changes = (game.gkChanges || []).filter(c => c.at <= atTs).sort((a, b) => a.at - b.at);
+  for (const c of changes) current = c.gkPlayerId || null;
+  return current;
+}
+
+function playerSeconds(playerId, game) {
+  if (!game.startingLineup) return 0;
+  const starting = game.startingLineup.includes(playerId);
+  const subs = (game.events || []).filter(e => e.type === 'SUB').sort((a, b) => a.at - b.at);
+  const intervals = [];
+  let onSince = starting ? game.startedAt : null;
+  for (const sub of subs) {
+    if (sub.playerId === playerId && onSince !== null) {
+      intervals.push([onSince, sub.at]);
+      onSince = null;
+    }
+    if (sub.subOnPlayerId === playerId && onSince === null) {
+      onSince = sub.at;
+    }
+  }
+  if (onSince !== null) {
+    const endTs = game.status === 'finished' && game.endedAt ? game.endedAt : Date.now();
+    intervals.push([onSince, endTs]);
+  }
+  const pauses = (game.pausePeriods || []).map(p => [p.startedAt, p.endedAt || Date.now()]);
+  let totalSec = 0;
+  for (const [s, e] of intervals) {
+    let secs = (e - s) / 1000;
+    for (const [ps, pe] of pauses) {
+      const oStart = Math.max(s, ps);
+      const oEnd = Math.min(e, pe);
+      if (oEnd > oStart) secs -= (oEnd - oStart) / 1000;
+    }
+    totalSec += Math.max(0, secs);
+  }
+  return Math.floor(totalSec);
+}
+
+// GK-only per-game context: OPP_GOALs conceded while this player was THE GK
+// (per game.gkPlayerId + game.gkChanges timeline), weighted by gkFault tag,
+// plus clean-sheet credit. Falls back to on-field-as-GK heuristic for legacy
+// games that pre-date the gkPlayerId field.
+function gkExtrasForGame(playerId, game) {
+  // Build the GK timeline: [{ from, to, gkPlayerId }]
+  const startTs = game.startedAt;
+  const endTs = game.status === 'finished' && game.endedAt ? game.endedAt : Date.now();
+  let gkTimeline;
+  if (game.gkPlayerId || (game.gkChanges && game.gkChanges.length > 0)) {
+    const segments = [];
+    let current = game.gkPlayerId || null;
+    let segStart = startTs;
+    const changes = [...(game.gkChanges || [])].sort((a, b) => a.at - b.at);
+    for (const c of changes) {
+      segments.push({ from: segStart, to: c.at, gkPlayerId: current });
+      current = c.gkPlayerId || null;
+      segStart = c.at;
+    }
+    segments.push({ from: segStart, to: endTs, gkPlayerId: current });
+    gkTimeline = segments.filter(s => s.gkPlayerId === playerId);
+  } else {
+    // Legacy fallback: any time the player was on the field counts as GK time.
+    const subs = (game.events || []).filter(e => e.type === 'SUB').sort((a, b) => a.at - b.at);
+    const intervals = [];
+    const starting = (game.startingLineup || []).includes(playerId);
+    let onSince = starting ? startTs : null;
+    for (const sub of subs) {
+      if (sub.playerId === playerId && onSince !== null) { intervals.push({ from: onSince, to: sub.at }); onSince = null; }
+      if (sub.subOnPlayerId === playerId && onSince === null) { onSince = sub.at; }
+    }
+    if (onSince !== null) intervals.push({ from: onSince, to: endTs });
+    gkTimeline = intervals;
+  }
+  if (gkTimeline.length === 0) return { oppGoalsConceded: 0, concededPenalty: 0, cleanSheets: 0, secondsAsGK: 0 };
+  let conceded = 0;
+  let concededPenalty = 0;
+  for (const e of (game.events || [])) {
+    if (e.type !== 'OPP_GOAL') continue;
+    if (gkTimeline.some(seg => e.at >= seg.from && e.at <= seg.to)) {
+      conceded++;
+      if (e.gkFault === 'gk') concededPenalty += 6;
+      else if (e.gkFault === 'unstoppable') concededPenalty += 0;
+      else concededPenalty += 3;
+    }
+  }
+  const secondsAsGK = gkTimeline.reduce((sum, seg) => sum + Math.max(0, (seg.to - seg.from) / 1000), 0);
+  const cleanSheets = (conceded === 0 && secondsAsGK >= 60 && game.status === 'finished') ? 1 : 0;
+  return { oppGoalsConceded: conceded, concededPenalty, cleanSheets, secondsAsGK };
+}
+
+// ===== PERFORMANCE SCORE =====
+// Weighted per-20-minute composite across 4 development pillars.
+// Returns { overall, attacking, defending, decisions, involvement } rounded to 1 decimal.
+// `position` (optional) — if 'GK', uses goalie-specific weights so keepers aren't
+// unfairly penalized by low ATK/DEC opportunity, and saves count for more.
+// `gkExtras` (optional, GK only) — { oppGoalsConceded, cleanSheets } aggregated
+// across the games being scored. Adds clean-sheet bonus and conceded penalty.
+// Default per-action point values + pillar weights. Coaches can override these
+// in Settings → Scoring Weights. `mergeWeights` fills in any missing fields so
+// older saved overrides still work if new actions are added later.
+const DEFAULT_WEIGHTS = {
+  points: {
+    GOAL_atk: 10, ASSIST_atk: 8, KEY_PASS_atk: 5, SHOT_ON_atk: 3, SHOT_OFF_atk: 1,
+    SAVE_def: 7, BLOCK_def: 5, BALL_WIN_def: 5, DUEL_WIN_def: 4, DUEL_LOSE_def: -1,
+    GIVE_GO_dec: 6, GIVE_GO_PARTNER_dec: 3, GATES_dec: 4, KEY_PASS_dec: 3, ASSIST_dec: 3,
+    HOLDS_BALL_dec: -4, TURNOVER_dec: -4, CLEAN_SHEET_def: 8,
+  },
+  gkPoints: {
+    GOAL_atk: 10, ASSIST_atk: 8, KEY_PASS_atk: 10, SHOT_ON_atk: 3, SHOT_OFF_atk: 1,
+    SAVE_def: 10, BLOCK_def: 5, BALL_WIN_def: 5, DUEL_WIN_def: 4, DUEL_LOSE_def: -1,
+    GIVE_GO_dec: 6, GIVE_GO_PARTNER_dec: 3, GATES_dec: 4, KEY_PASS_dec: 6, ASSIST_dec: 3,
+    HOLDS_BALL_dec: -4, TURNOVER_dec: -4, CLEAN_SHEET_def: 8,
+  },
+  pillars: {
+    outfield: { atk: 30, def: 25, dec: 30, inv: 15 },
+    gk:       { atk: 10, def: 55, dec: 25, inv: 10 },
+  },
+};
+
+function mergeWeights(w) {
+  return {
+    points:   { ...DEFAULT_WEIGHTS.points,   ...(w?.points   || {}) },
+    gkPoints: { ...DEFAULT_WEIGHTS.gkPoints, ...(w?.gkPoints || {}) },
+    pillars: {
+      outfield: { ...DEFAULT_WEIGHTS.pillars.outfield, ...(w?.pillars?.outfield || {}) },
+      gk:       { ...DEFAULT_WEIGHTS.pillars.gk,       ...(w?.pillars?.gk       || {}) },
+    },
+  };
+}
+
+function computePerformanceScore(playerId, events, minutesPlayed, position, gkExtras = {}, weights) {
+  if (minutesPlayed <= 0) return { overall: 0, attacking: 0, defending: 0, decisions: 0, involvement: 0 };
+  const W = mergeWeights(weights);
+  const isGK = position === 'GK';
+  const perHalf = minutesPlayed / 20;
+  const c = {};
+  let partnerCount = 0; // give & go wall-pass credits earned by this player
+  for (const e of events) {
+    if (e.type === 'SUB') continue;
+    if (e.playerId === playerId) {
+      c[e.type] = (c[e.type] || 0) + 1;
+    }
+    if (e.type === 'GIVE_GO' && e.partnerId === playerId) {
+      partnerCount++;
+    }
+  }
+  const pts = W.points;
+  const attacking = (
+    (c.GOAL || 0)     * pts.GOAL_atk +
+    (c.ASSIST || 0)   * pts.ASSIST_atk +
+    (c.KEY_PASS || 0) * pts.KEY_PASS_atk +
+    (c.SHOT_ON || 0)  * pts.SHOT_ON_atk +
+    (c.SHOT_OFF || 0) * pts.SHOT_OFF_atk
+  ) / perHalf;
+  const concededPenalty = isGK ? (gkExtras.concededPenalty || 0) : 0;
+  const cleanSheets = isGK ? (gkExtras.cleanSheets || 0) : 0;
+  const defending = (
+    (c.SAVE || 0)      * pts.SAVE_def +
+    (c.BLOCK || 0)     * pts.BLOCK_def +
+    (c.BALL_WIN || 0)  * pts.BALL_WIN_def +
+    (c.DUEL_WIN || 0)  * pts.DUEL_WIN_def +
+    (c.DUEL_LOSE || 0) * pts.DUEL_LOSE_def +
+    (isGK ? (-concededPenalty + cleanSheets * pts.CLEAN_SHEET_def) : 0)
+  ) / perHalf;
+  const decisions = (
+    (c.GIVE_GO || 0)    * pts.GIVE_GO_dec +
+    partnerCount        * pts.GIVE_GO_PARTNER_dec +
+    (c.GATES || 0)      * pts.GATES_dec +
+    (c.KEY_PASS || 0)   * pts.KEY_PASS_dec +
+    (c.ASSIST || 0)     * pts.ASSIST_dec +
+    (c.HOLDS_BALL || 0) * pts.HOLDS_BALL_dec +
+    (c.TURNOVER || 0)   * pts.TURNOVER_dec
+  ) / perHalf;
+  const totalEvents = Object.values(c).reduce((a, b) => a + b, 0) + partnerCount;
+  const involvement = totalEvents / perHalf;
+  const pil = isGK ? W.pillars.gk : W.pillars.outfield;
+  const overall = (pil.atk * attacking + pil.def * defending + pil.dec * decisions + pil.inv * involvement) / 100;
+  const r = (n) => Math.round(n * 10) / 10;
+  return { overall: r(overall), attacking: r(attacking), defending: r(defending), decisions: r(decisions), involvement: r(involvement) };
+}
+
+function formatDate(iso) {
+  return new Date(iso).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+}
+
+const COACH_PASS = 'ManUtd2016';
+
+function App() {
+  // URL-based routing — computed once at mount; the URL doesn't change without
+  // a full reload so this is safe to do before hooks.
+  //   ?live=<gameId>  -> single-game public scoreboard (Share button URL)
+  //   ?coach          -> coach app (password-gated)
+  //   (default)       -> public home: current/latest scoreboard + past matches
+  const params = (typeof window !== 'undefined')
+    ? new URLSearchParams(window.location.search)
+    : new URLSearchParams('');
+  const liveGameId = params.get('live');
+  const isCoach = params.has('coach');
+  if (liveGameId) return <LiveScorePage gameId={liveGameId} />;
+  if (!isCoach) return <PublicHomePage />;
+
+  // ---- coach app below ----
+  const [unlocked, setUnlocked] = useState(() => {
+    try { return localStorage.getItem('stompers_unlocked') === 'true'; } catch(e) { return false; }
+  });
+  const [roster, setRoster] = useState([]);
+  const [games, setGames] = useState([]);
+  const [weights, setWeights] = useState(DEFAULT_WEIGHTS);
+  const [loaded, setLoaded] = useState(false);
+  const [view, setView] = useState('home');
+  const [editingPlayer, setEditingPlayer] = useState(null);
+  const [activeGameId, setActiveGameId] = useState(null);
+  const [viewingGameId, setViewingGameId] = useState(null);
+  const [pendingEvent, setPendingEvent] = useState(null);
+  const [toast, setToast] = useState(null);
+  const [tick, setTick] = useState(0);
+  const [confirmDialog, setConfirmDialog] = useState(null);
+  const [pendingGameSetup, setPendingGameSetup] = useState(null);
+
+  const askConfirm = (message, onYes, opts = {}) => {
+    setConfirmDialog({ message, onYes, danger: !!opts.danger, yesLabel: opts.yesLabel || 'YES' });
+  };
+
+  // Subscribe to Firestore on mount (after auth ready)
+  useEffect(() => {
+    let unsubRoster = null;
+    let unsubGames = null;
+
+    window.fbReady.then((ok) => {
+      if (!ok) return;
+
+      // Roster + weights listener (both live on the team doc)
+      unsubRoster = teamDoc().onSnapshot((snap) => {
+        if (snap.exists) {
+          const data = snap.data();
+          if (Array.isArray(data.roster) && data.roster.length > 0) {
+            setRoster(data.roster);
+          } else {
+            teamDoc().set({ roster: SEED_ROSTER }, { merge: true });
+          }
+          if (data.weights) setWeights(mergeWeights(data.weights));
+        } else {
+          teamDoc().set({ roster: SEED_ROSTER });
+        }
+        setLoaded(true);
+      }, (err) => {
+        console.error('Roster listener error:', err);
+        setLoaded(true);
+      });
+
+      // Games listener (sorted by date desc client-side)
+      unsubGames = gamesCol().onSnapshot((snap) => {
+        const fetched = snap.docs.map((d) => ({ ...d.data(), id: d.id }));
+        fetched.sort((a, b) => new Date(b.date) - new Date(a.date));
+        setGames(fetched);
+      }, (err) => {
+        console.error('Games listener error:', err);
+      });
+    });
+
+    return () => {
+      if (unsubRoster) unsubRoster();
+      if (unsubGames) unsubGames();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (view !== 'activeGame') return;
+    const id = setInterval(() => setTick(t => t + 1), 1000);
+    return () => clearInterval(id);
+  }, [view]);
+
+  const persistRoster = async (next) => {
+    setRoster(next); // optimistic
+    try { await teamDoc().set({ roster: next }, { merge: true }); } catch (e) { console.error(e); }
+  };
+
+  const persistGames = async (next) => {
+    // Diff against current and write only what changed.
+    const prevById = Object.fromEntries(games.map(g => [g.id, g]));
+    const nextById = Object.fromEntries(next.map(g => [g.id, g]));
+    setGames(next); // optimistic
+    const writes = [];
+    for (const g of next) {
+      const prev = prevById[g.id];
+      if (!prev || JSON.stringify(prev) !== JSON.stringify(g)) {
+        const { id, ...payload } = g;
+        writes.push(gamesCol().doc(id).set(payload));
+      }
+    }
+    for (const id of Object.keys(prevById)) {
+      if (!nextById[id]) writes.push(gamesCol().doc(id).delete());
+    }
+    try { await Promise.all(writes); } catch (e) { console.error('Save error:', e); }
+  };
+
+  const persistWeights = async (next) => {
+    const merged = mergeWeights(next);
+    setWeights(merged); // optimistic
+    try { await teamDoc().set({ weights: merged }, { merge: true }); } catch (e) { console.error('Weights save error:', e); }
+  };
+
+  const showToast = (msg) => {
+    setToast(msg);
+    setTimeout(() => setToast(null), 1800);
+  };
+
+  const upsertPlayer = (player) => {
+    if (player.id) {
+      persistRoster(roster.map(p => p.id === player.id ? player : p));
+    } else {
+      persistRoster([...roster, { ...player, id: uid() }]);
+    }
+    setEditingPlayer(null);
+    setView('roster');
+  };
+
+  const removePlayer = (id) => {
+    persistRoster(roster.filter(p => p.id !== id));
+  };
+
+  const startNewGame = (opponent, isHome, tournament, startingLineup, gkPlayerId, squad) => {
+    const now = Date.now();
+    const squadIds = (squad && squad.length > 0) ? squad : (startingLineup || []);
+    const game = {
+      id: uid(),
+      opponent: opponent || 'Opponent',
+      tournament: tournament || 'Festival',
+      isHome: !!isHome,
+      date: new Date().toISOString(),
+      ourScore: 0,
+      oppScore: 0,
+      period: 1,
+      status: 'active',
+      startedAt: now,
+      clockRunning: true,
+      elapsedAtPause: 0,
+      segmentStartedAt: now,
+      events: [],
+      squad: squadIds,
+      startingLineup: startingLineup || [],
+      gkPlayerId: gkPlayerId || null,
+      gkChanges: [],
+      pausePeriods: [],
+    };
+    persistGames([game, ...games]);
+    setActiveGameId(game.id);
+    setView('activeGame');
+  };
+
+  const updateGame = (id, mutator) => {
+    persistGames(games.map(g => g.id === id ? mutator(g) : g));
+  };
+
+  const logEvent = (gameId, eventType, playerId, extras = {}) => {
+    const game = games.find(g => g.id === gameId);
+    if (!game) return;
+    const ev = EVENT_TYPES[eventType];
+    const elapsed = computeElapsed(game);
+    const event = {
+      id: uid(),
+      type: eventType,
+      playerId: playerId || null,
+      period: game.period,
+      elapsed,
+      at: Date.now(),
+      ...extras,
+    };
+    const updated = {
+      ...game,
+      events: [...game.events, event],
+      ourScore: game.ourScore + (ev.delta === 'us' ? 1 : 0),
+      oppScore: game.oppScore + (ev.delta === 'opp' ? 1 : 0),
+    };
+    persistGames(games.map(g => g.id === gameId ? updated : g));
+
+    const player = roster.find(p => p.id === playerId);
+    let playerLabel = '';
+    if (player) playerLabel = `${player.name} #${player.number}`;
+    else if (ev.requiresPlayer && playerId === null) playerLabel = 'Unknown';
+    let suffix = '';
+    if (eventType === 'GIVE_GO' && extras.partnerId) {
+      const partner = roster.find(p => p.id === extras.partnerId);
+      if (partner) suffix = ` → 🤝 ${partner.name} #${partner.number}`;
+    }
+    showToast(`${ev.emoji} ${ev.label}${playerLabel ? ` · ${playerLabel}` : ''}${suffix}`);
+
+    if (eventType === 'GOAL' && playerId) {
+      setPendingEvent({ type: 'ASSIST', excludePlayerId: playerId, skippable: true });
+    } else {
+      setPendingEvent(null);
+    }
+  };
+
+  const undoLastEvent = (gameId) => {
+    const game = games.find(g => g.id === gameId);
+    if (!game || game.events.length === 0) return;
+    const last = game.events[game.events.length - 1];
+    const ev = EVENT_TYPES[last.type];
+    const updated = {
+      ...game,
+      events: game.events.slice(0, -1),
+      ourScore: game.ourScore - (ev?.delta === 'us' ? 1 : 0),
+      oppScore: game.oppScore - (ev?.delta === 'opp' ? 1 : 0),
+    };
+    persistGames(games.map(g => g.id === gameId ? updated : g));
+    showToast('Last event removed');
+  };
+
+  const deleteEvent = (gameId, eventId) => {
+    const game = games.find(g => g.id === gameId);
+    if (!game) return;
+    const ev = game.events.find(e => e.id === eventId);
+    if (!ev) return;
+    const evType = EVENT_TYPES[ev.type];
+    const updated = {
+      ...game,
+      events: game.events.filter(e => e.id !== eventId),
+      ourScore: game.ourScore - (evType?.delta === 'us' ? 1 : 0),
+      oppScore: game.oppScore - (evType?.delta === 'opp' ? 1 : 0),
+    };
+    persistGames(games.map(g => g.id === gameId ? updated : g));
+  };
+
+  const endGame = (gameId) => {
+    updateGame(gameId, g => {
+      const now = Date.now();
+      const additional = g.clockRunning && g.segmentStartedAt
+        ? Math.floor((now - g.segmentStartedAt) / 1000) : 0;
+      const pp = [...(g.pausePeriods || [])];
+      if (pp.length > 0 && pp[pp.length-1].endedAt === null) {
+        pp[pp.length-1] = { ...pp[pp.length-1], endedAt: now };
+      }
+      return {
+        ...g,
+        status: 'finished',
+        endedAt: now,
+        clockRunning: false,
+        elapsedAtPause: (g.elapsedAtPause || 0) + additional,
+        segmentStartedAt: null,
+        pausePeriods: pp,
+      };
+    });
+    setActiveGameId(null);
+    setView('home');
+    showToast('Game saved');
+  };
+
+  const deleteGame = (gameId) => {
+    persistGames(games.filter(g => g.id !== gameId));
+    setView('home');
+  };
+
+  const pauseHalfTime = (gameId) => {
+    updateGame(gameId, g => {
+      const now = Date.now();
+      const additional = g.clockRunning && g.segmentStartedAt
+        ? Math.floor((now - g.segmentStartedAt) / 1000) : 0;
+      return {
+        ...g,
+        clockRunning: false,
+        elapsedAtPause: (g.elapsedAtPause || 0) + additional,
+        segmentStartedAt: null,
+        pausePeriods: [...(g.pausePeriods || []), { startedAt: now, endedAt: null }],
+      };
+    });
+    showToast('⏸ Half time — clock paused');
+  };
+
+  const startSecondHalf = (gameId) => {
+    updateGame(gameId, g => {
+      const now = Date.now();
+      const pp = [...(g.pausePeriods || [])];
+      if (pp.length > 0 && pp[pp.length-1].endedAt === null) {
+        pp[pp.length-1] = { ...pp[pp.length-1], endedAt: now };
+      }
+      return {
+        ...g,
+        clockRunning: true,
+        period: 2,
+        elapsedAtPause: 0,
+        segmentStartedAt: now,
+        pausePeriods: pp,
+      };
+    });
+    showToast('▶ 2nd half started');
+  };
+
+  const resumeFirstHalf = (gameId) => {
+    updateGame(gameId, g => {
+      const now = Date.now();
+      const pp = [...(g.pausePeriods || [])];
+      if (pp.length > 0 && pp[pp.length-1].endedAt === null) {
+        pp[pp.length-1] = { ...pp[pp.length-1], endedAt: now };
+      }
+      return {
+        ...g,
+        clockRunning: true,
+        period: 1,
+        segmentStartedAt: now,
+        pausePeriods: pp,
+      };
+    });
+    showToast('▶ Back to 1st half');
+  };
+
+  const logSubEvent = (gameId, offPlayerId, onPlayerId) => {
+    const game = games.find(g => g.id === gameId);
+    if (!game) return;
+    // Validate against the LIVE lineup, not the picker's snapshot. Protects
+    // against any race where the SUB picker was rendered with stale state
+    // (e.g. rapid back-to-back taps before Firestore round-tripped).
+    const liveOn = onFieldAt(game);
+    if (!liveOn.has(offPlayerId)) {
+      const p = roster.find(r => r.id === offPlayerId);
+      showToast(`⚠️ ${p?.name || 'That player'} is already off the field`);
+      setPendingEvent(null);
+      return;
+    }
+    if (liveOn.has(onPlayerId)) {
+      const p = roster.find(r => r.id === onPlayerId);
+      showToast(`⚠️ ${p?.name || 'That player'} is already on the field`);
+      setPendingEvent(null);
+      return;
+    }
+    if (offPlayerId === onPlayerId) {
+      showToast('⚠️ Pick a different player to sub on');
+      setPendingEvent(null);
+      return;
+    }
+    const subAt = Date.now();
+    const elapsed = computeElapsed(game);
+    const event = {
+      id: uid(),
+      type: 'SUB',
+      playerId: offPlayerId,
+      subOnPlayerId: onPlayerId,
+      period: game.period,
+      elapsed,
+      at: subAt,
+    };
+    const updated = { ...game, events: [...game.events, event] };
+    persistGames(games.map(g => g.id === gameId ? updated : g));
+    const off = roster.find(p => p.id === offPlayerId);
+    const on = roster.find(p => p.id === onPlayerId);
+    showToast(`🔄 ${on?.name || '?'} IN · ${off?.name || '?'} OUT`);
+    // If the player going off was the current GK, immediately prompt for the new keeper.
+    const wasGK = currentGKAt(updated, subAt - 1) === offPlayerId;
+    if (wasGK) {
+      setPendingEvent({ type: 'NEW_GK', defaultGK: onPlayerId, at: subAt });
+    } else {
+      setPendingEvent(null);
+    }
+  };
+
+  const setGameGK = (gameId, newGKPlayerId, atTs) => {
+    const game = games.find(g => g.id === gameId);
+    if (!game) return;
+    const change = { at: atTs || Date.now(), gkPlayerId: newGKPlayerId || null };
+    const updated = { ...game, gkChanges: [...(game.gkChanges || []), change] };
+    persistGames(games.map(g => g.id === gameId ? updated : g));
+    const p = roster.find(pl => pl.id === newGKPlayerId);
+    showToast(`🧤 ${p?.name || 'No GK'} now in goal`);
+    setPendingEvent(null);
+  };
+
+  if (!unlocked) {
+    return <LockScreen onUnlock={() => {
+      try { localStorage.setItem('stompers_unlocked', 'true'); } catch(e) {}
+      setUnlocked(true);
+    }} />;
+  }
+
+  if (!loaded) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-stone-50">
+        <style>{FONT_STYLES}</style>
+        <div className="font-sans-pro text-stone-500">Loading…</div>
+      </div>
+    );
+  }
+
+  const activeGame = games.find(g => g.id === activeGameId) || games.find(g => g.status === 'active');
+  const viewingGame = games.find(g => g.id === viewingGameId);
+
+  return (
+    <div className="min-h-screen bg-stone-50 font-sans-pro text-stone-900">
+      <style>{FONT_STYLES}</style>
+
+      {toast && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-stone-900 text-white px-5 py-3 rounded-full shadow-xl text-sm font-semibold animate-[fadein_0.15s_ease-out]">
+          {toast}
+        </div>
+      )}
+
+      {view === 'home' && (
+        <HomeView
+          roster={roster}
+          games={games}
+          activeGame={activeGame}
+          onGoRoster={() => setView('roster')}
+          onNewGame={() => setView('gameSetup')}
+          onResumeGame={() => { setActiveGameId(activeGame.id); setView('activeGame'); }}
+          onViewGame={(id) => { setViewingGameId(id); setView('gameDetail'); }}
+          onViewStats={() => setView('stats')}
+          onViewWeights={() => setView('weights')}
+          onViewHelp={() => setView('help')}
+        />
+      )}
+
+      {view === 'roster' && (
+        <RosterView
+          roster={roster}
+          onBack={() => setView('home')}
+          onAdd={() => { setEditingPlayer({}); setView('playerForm'); }}
+          onEdit={(p) => { setEditingPlayer(p); setView('playerForm'); }}
+          onDelete={(p) => askConfirm(`Remove ${p.name} #${p.number} from the roster?`, () => removePlayer(p.id), { danger: true, yesLabel: 'REMOVE' })}
+          onBulkPhotos={async (files) => {
+            const updates = {};
+            let matched = 0, skipped = 0;
+            for (const file of files) {
+              // Extract the first run of digits from the filename, e.g. "#10.PNG" -> 10.
+              const m = file.name.match(/(\d+)/);
+              if (!m) { skipped++; continue; }
+              const num = m[1];
+              const player = roster.find(p => String(p.number) === num);
+              if (!player) { skipped++; continue; }
+              try {
+                updates[player.id] = await resizePhoto(file, 256, 0.85);
+                matched++;
+              } catch (e) {
+                skipped++;
+              }
+            }
+            if (matched === 0) {
+              showToast(`No photos matched (skipped ${skipped})`);
+              return;
+            }
+            const next = roster.map(p => updates[p.id] ? { ...p, photo: updates[p.id] } : p);
+            await persistRoster(next);
+            showToast(`📷 Imported ${matched} photo${matched === 1 ? '' : 's'}${skipped ? ` (skipped ${skipped})` : ''}`);
+          }}
+        />
+      )}
+
+      {view === 'playerForm' && (
+        <PlayerForm
+          player={editingPlayer}
+          onSave={upsertPlayer}
+          onCancel={() => { setEditingPlayer(null); setView('roster'); }}
+        />
+      )}
+
+      {view === 'gameSetup' && (
+        <GameSetup
+          rosterCount={roster.length}
+          onCancel={() => setView('home')}
+          onStart={(opponent, isHome, tournament) => {
+            setPendingGameSetup({ opponent, isHome, tournament });
+            setView('squad');
+          }}
+          onGoRoster={() => setView('roster')}
+        />
+      )}
+
+      {view === 'squad' && pendingGameSetup && (
+        <SquadPickerView
+          roster={roster}
+          setup={pendingGameSetup}
+          initialSquad={pendingGameSetup.squad}
+          onBack={() => setView('gameSetup')}
+          onNext={(squad) => {
+            setPendingGameSetup({ ...pendingGameSetup, squad });
+            setView('lineup');
+          }}
+        />
+      )}
+
+      {view === 'lineup' && pendingGameSetup && (
+        <StartingLineupView
+          roster={roster}
+          squad={pendingGameSetup.squad}
+          setup={pendingGameSetup}
+          onBack={() => { setView('squad'); }}
+          onStart={(lineup, gkPlayerId) => {
+            startNewGame(pendingGameSetup.opponent, pendingGameSetup.isHome, pendingGameSetup.tournament, lineup, gkPlayerId, pendingGameSetup.squad);
+            setPendingGameSetup(null);
+          }}
+        />
+      )}
+
+      {view === 'activeGame' && activeGame && (
+        <ActiveGameView
+          game={activeGame}
+          roster={roster}
+          pendingEvent={pendingEvent}
+          onSelectEvent={(type) => {
+            if (type === '__MINS__') {
+              setPendingEvent({ type: 'MINS_VIEW' });
+              return;
+            }
+            if (type === 'SUB') {
+              setPendingEvent({ type: 'SUB', step: 'OFF' });
+              return;
+            }
+            if (type === 'OPP_GOAL') {
+              setPendingEvent({ type: 'OPP_GOAL_FAULT' });
+              return;
+            }
+            const ev = EVENT_TYPES[type];
+            if (!ev.requiresPlayer) {
+              logEvent(activeGame.id, type, null);
+            } else {
+              setPendingEvent({ type });
+            }
+          }}
+          onResolveOppGoal={(fault) => {
+            // fault: 'gk' | 'unstoppable' | null (neutral / unsure)
+            logEvent(activeGame.id, 'OPP_GOAL', null, { gkFault: fault });
+          }}
+          onConfirmGK={(playerId) => setGameGK(activeGame.id, playerId)}
+          onSwapGK={() => setPendingEvent({ type: 'NEW_GK', defaultGK: currentGKAt(activeGame) })}
+          onSelectPlayer={(playerId) => {
+            if (pendingEvent?.type === 'SUB' && pendingEvent.step === 'OFF') {
+              // Re-validate against the LIVE lineup at click time, not the
+              // picker's snapshot — prevents stale state from advancing.
+              const liveOn = onFieldAt(activeGame);
+              if (!liveOn.has(playerId)) {
+                const p = roster.find(r => r.id === playerId);
+                showToast(`⚠️ ${p?.name || 'That player'} is already off the field`);
+                setPendingEvent(null);
+                return;
+              }
+              setPendingEvent({ type: 'SUB', step: 'ON', offPlayerId: playerId });
+              return;
+            }
+            if (pendingEvent?.type === 'SUB' && pendingEvent.step === 'ON') {
+              logSubEvent(activeGame.id, pendingEvent.offPlayerId, playerId);
+              return;
+            }
+            // Give & go: first pick = initiator, then ask for the wall partner.
+            if (pendingEvent?.type === 'GIVE_GO' && !pendingEvent.initiatorId) {
+              setPendingEvent({ type: 'GIVE_GO_PARTNER', initiatorId: playerId });
+              return;
+            }
+            if (pendingEvent?.type === 'GIVE_GO_PARTNER') {
+              // playerId === null means coach tapped SKIP / unknown — log
+              // the give & go with no partner credit.
+              const extras = playerId ? { partnerId: playerId } : {};
+              logEvent(activeGame.id, 'GIVE_GO', pendingEvent.initiatorId, extras);
+              return;
+            }
+            const t = typeof pendingEvent === 'string' ? pendingEvent : pendingEvent?.type;
+            logEvent(activeGame.id, t, playerId);
+          }}
+          onCancelEvent={() => setPendingEvent(null)}
+          onUndo={() => undoLastEvent(activeGame.id)}
+          onPauseHalfTime={() => pauseHalfTime(activeGame.id)}
+          onStartSecondHalf={() => startSecondHalf(activeGame.id)}
+          onResumeFirstHalf={() => resumeFirstHalf(activeGame.id)}
+          onEnd={() => askConfirm('End game and save final score?', () => endGame(activeGame.id))}
+          onBack={() => setView('home')}
+          tick={tick}
+        />
+      )}
+
+      {view === 'gameDetail' && viewingGame && (
+        <GameDetail
+          game={viewingGame}
+          roster={roster}
+          weights={weights}
+          onBack={() => setView('home')}
+          onDelete={() => askConfirm('Delete this game permanently?', () => deleteGame(viewingGame.id), { danger: true, yesLabel: 'DELETE' })}
+          onDeleteEvent={(eid) => deleteEvent(viewingGame.id, eid)}
+        />
+      )}
+
+      {view === 'stats' && (
+        <StatsView roster={roster} games={games} weights={weights} onBack={() => setView('home')} />
+      )}
+
+      {view === 'weights' && (
+        <WeightsView weights={weights} onSave={persistWeights} onBack={() => setView('home')} />
+      )}
+
+      {view === 'help' && (
+        <HelpView onBack={() => setView('home')} />
+      )}
+
+      {confirmDialog && (
+        <ConfirmDialog
+          message={confirmDialog.message}
+          danger={confirmDialog.danger}
+          yesLabel={confirmDialog.yesLabel}
+          onCancel={() => setConfirmDialog(null)}
+          onConfirm={() => {
+            const { onYes } = confirmDialog;
+            setConfirmDialog(null);
+            onYes();
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+/* ---------- CONFIRM DIALOG ---------- */
+function ConfirmDialog({ message, danger, yesLabel = 'YES', onCancel, onConfirm }) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm animate-[fadein_0.15s_ease-out]"
+      onClick={onCancel}
+    >
+      <div
+        className="bg-white rounded-t-3xl sm:rounded-2xl w-full sm:max-w-sm p-5 pb-8 sm:pb-5 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="text-stone-900 text-center font-semibold text-base mb-5 pt-2">{message}</div>
+        <div className="grid grid-cols-2 gap-2.5">
+          <button
+            onClick={onCancel}
+            className="py-4 rounded-xl bg-stone-100 text-stone-700 font-display text-lg active:scale-[0.98] transition"
+          >
+            CANCEL
+          </button>
+          <button
+            onClick={onConfirm}
+            className={`py-4 rounded-xl font-display text-lg active:scale-[0.98] transition ${
+              danger ? 'bg-red-500 text-white' : 'bg-stone-900 text-white'
+            }`}
+          >
+            {yesLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- HOME ---------- */
+function HomeView({ roster, games, activeGame, onGoRoster, onNewGame, onResumeGame, onViewGame, onViewStats, onViewWeights, onViewHelp }) {
+  const finishedGames = games.filter(g => g.status === 'finished');
+  const wins = finishedGames.filter(g => g.ourScore > g.oppScore).length;
+  const losses = finishedGames.filter(g => g.ourScore < g.oppScore).length;
+  const draws = finishedGames.filter(g => g.ourScore === g.oppScore).length;
+  const [showWelcome, setShowWelcome] = useState(() => {
+    try { return localStorage.getItem('stompers_welcome_dismissed') !== 'true'; } catch(e) { return true; }
+  });
+  const dismissWelcome = () => {
+    try { localStorage.setItem('stompers_welcome_dismissed', 'true'); } catch(e) {}
+    setShowWelcome(false);
+  };
+
+  // ---- PWA install state ----
+  // Treat the app as "installed" if launched in standalone display mode OR via
+  // iOS home-screen launcher (legacy navigator.standalone).
+  const detectStandalone = () => {
+    try {
+      if (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) return true;
+      if (window.navigator && window.navigator.standalone) return true;
+    } catch (e) {}
+    return false;
+  };
+  const [isStandalone, setIsStandalone] = useState(detectStandalone);
+  const [canPromptInstall, setCanPromptInstall] = useState(() => !!(typeof window !== 'undefined' && window.fbDeferredInstall));
+  const [showInstallModal, setShowInstallModal] = useState(false);
+  useEffect(() => {
+    const onAvail = () => setCanPromptInstall(true);
+    const onInstalled = () => { setCanPromptInstall(false); setIsStandalone(true); setShowInstallModal(false); };
+    const mq = window.matchMedia ? window.matchMedia('(display-mode: standalone)') : null;
+    const onMode = () => setIsStandalone(detectStandalone());
+    window.addEventListener('stompers:installavailable', onAvail);
+    window.addEventListener('stompers:installed', onInstalled);
+    if (mq && mq.addEventListener) mq.addEventListener('change', onMode);
+    return () => {
+      window.removeEventListener('stompers:installavailable', onAvail);
+      window.removeEventListener('stompers:installed', onInstalled);
+      if (mq && mq.removeEventListener) mq.removeEventListener('change', onMode);
+    };
+  }, []);
+
+  return (
+    <div className="pb-24">
+      <div className="stripes-bg text-white px-5 pt-12 pb-8 relative">
+        <div className="absolute top-12 right-4 flex items-center gap-2">
+          {!isStandalone && (
+            <button
+              onClick={() => setShowInstallModal(true)}
+              aria-label="Install app on this device"
+              className="h-9 px-3 rounded-full bg-lime-400/90 hover:bg-lime-400 text-stone-900 font-display text-xs flex items-center gap-1 border border-lime-300 active:scale-95 shadow"
+            >
+              <span>📲</span><span>INSTALL</span>
+            </button>
+          )}
+          <button
+            onClick={onViewHelp}
+            aria-label="Help & onboarding"
+            className="w-9 h-9 rounded-full bg-white/15 hover:bg-white/25 text-white font-display text-lg flex items-center justify-center border border-white/20 active:scale-95"
+          >
+            ?
+          </button>
+        </div>
+        <div className="flex items-start gap-3">
+          <img
+            src="./stompers_logo.png"
+            alt=""
+            className="w-16 h-16 shrink-0 drop-shadow"
+            onError={(e) => { e.currentTarget.style.display = 'none'; }}
+          />
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 text-lime-400 text-xs font-bold uppercase tracking-widest mb-2">
+              <Flag className="w-3.5 h-3.5" />
+              Match Day Manager
+            </div>
+            <h1 className="font-display text-5xl leading-none">U10 BOYS</h1>
+            <div className="font-display text-3xl text-lime-400 leading-tight">2016 SQUAD</div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-3 gap-3 mt-6">
+          <Stat label="WINS" value={wins} accent="text-lime-400" />
+          <Stat label="DRAWS" value={draws} accent="text-stone-300" />
+          <Stat label="LOSSES" value={losses} accent="text-red-400" />
+        </div>
+      </div>
+
+      {activeGame && (
+        <button
+          onClick={onResumeGame}
+          className="mx-4 -mt-4 w-[calc(100%-2rem)] bg-amber-100 border-2 border-amber-400 text-amber-900 rounded-2xl p-4 flex items-center justify-between shadow-md active:scale-[0.99] transition"
+        >
+          <div className="flex items-center gap-3 text-left">
+            <div className="w-10 h-10 rounded-full bg-amber-400 flex items-center justify-center">
+              <PlayCircle className="w-6 h-6 text-amber-900" />
+            </div>
+            <div>
+              <div className="font-bold text-sm">GAME IN PROGRESS</div>
+              <div className="text-xs">{activeGame.tournament || 'Festival'} · vs {activeGame.opponent} · {activeGame.ourScore}–{activeGame.oppScore}</div>
+            </div>
+          </div>
+          <ChevronRight className="w-5 h-5" />
+        </button>
+      )}
+
+      {showWelcome && !activeGame && (
+        <div className="mx-4 -mt-4 bg-white border-2 border-stone-900 rounded-2xl p-4 shadow-md relative">
+          <button
+            onClick={dismissWelcome}
+            aria-label="Dismiss welcome"
+            className="absolute top-2 right-2 w-7 h-7 rounded-full bg-stone-100 hover:bg-stone-200 flex items-center justify-center"
+          >
+            <X className="w-4 h-4" />
+          </button>
+          <div className="text-2xl mb-1">👋</div>
+          <div className="font-display text-xl leading-tight mb-1">NEW HERE?</div>
+          <div className="text-sm text-stone-600 mb-3">
+            Track your match-day roster, log live events, and get per-player performance scores. Take the quick tour first.
+          </div>
+          <button
+            onClick={onViewHelp}
+            className="w-full bg-stone-900 text-lime-400 font-display text-lg py-3 rounded-xl active:scale-[0.98] transition"
+          >
+            OPEN HELP
+          </button>
+        </div>
+      )}
+
+      <div className="px-4 pt-6">
+        <button
+          onClick={onNewGame}
+          className="w-full bg-lime-500 hover:bg-lime-600 text-stone-900 font-display text-3xl py-6 rounded-2xl shadow-lg shadow-lime-500/30 border-2 border-lime-600 active:scale-[0.99] transition flex items-center justify-center gap-3"
+        >
+          <Zap className="w-7 h-7" />
+          START GAME
+        </button>
+      </div>
+
+      <div className="grid grid-cols-3 gap-3 px-4 pt-3">
+        <TileButton onClick={onGoRoster} icon={<Users className="w-6 h-6" />} label="ROSTER" sub={`${roster.length} players`} />
+        <TileButton onClick={onViewStats} icon={<BarChart3 className="w-6 h-6" />} label="STATS" sub="Season totals" />
+        <TileButton onClick={onViewWeights} icon={<span className="text-2xl leading-none">⚙</span>} label="SCORING" sub="Tune weights" />
+      </div>
+
+      <div className="px-4 pt-8">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="font-display text-2xl">PAST GAMES</h2>
+          <div className="text-xs text-stone-500 font-semibold">{finishedGames.length} total</div>
+        </div>
+        {finishedGames.length === 0 ? (
+          <div className="bg-white border border-stone-200 rounded-2xl p-6 text-center text-stone-500 text-sm">
+            No games yet. Tap <span className="font-bold text-stone-900">START GAME</span> when you're at the field.
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {finishedGames.slice(0, 10).map(g => (
+              <button
+                key={g.id}
+                onClick={() => onViewGame(g.id)}
+                className="w-full bg-white border border-stone-200 rounded-xl p-3 flex items-center gap-3 active:scale-[0.99] transition text-left"
+              >
+                <div className={`w-10 h-10 rounded-lg flex items-center justify-center font-display text-base ${
+                  g.ourScore > g.oppScore ? 'bg-lime-100 text-lime-800' :
+                  g.ourScore < g.oppScore ? 'bg-red-100 text-red-800' :
+                  'bg-stone-100 text-stone-700'
+                }`}>
+                  {g.ourScore > g.oppScore ? 'W' : g.ourScore < g.oppScore ? 'L' : 'D'}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="font-bold text-sm truncate">vs {g.opponent}</div>
+                  <div className="text-xs text-stone-500 truncate">{g.tournament || 'Festival'} · {formatDate(g.date)}</div>
+                </div>
+                <div className="font-display text-xl tabular-nums">
+                  {g.ourScore}–{g.oppScore}
+                </div>
+                <ChevronRight className="w-4 h-4 text-stone-400" />
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+      {showInstallModal && (
+        <InstallModal
+          canPrompt={canPromptInstall}
+          onTriggerPrompt={async () => {
+            const dp = (typeof window !== 'undefined') ? window.fbDeferredInstall : null;
+            if (!dp) return;
+            try {
+              dp.prompt();
+              await dp.userChoice;
+            } catch (e) {}
+            window.fbDeferredInstall = null;
+            setCanPromptInstall(false);
+            setShowInstallModal(false);
+          }}
+          onClose={() => setShowInstallModal(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+/* ---------- INSTALL APP MODAL ---------- */
+function InstallModal({ canPrompt, onTriggerPrompt, onClose }) {
+  // Detect platform once per open.
+  const ua = (typeof navigator !== 'undefined' && navigator.userAgent) || '';
+  const isIOS = /iPad|iPhone|iPod/.test(ua) && !window.MSStream;
+  const isAndroid = /Android/.test(ua);
+  const isSafari = /^((?!chrome|android|crios|fxios).)*safari/i.test(ua);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm animate-[fadein_0.15s_ease-out]"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-t-3xl sm:rounded-2xl w-full sm:max-w-md p-5 pb-8 sm:pb-5 shadow-2xl max-h-[90vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center gap-2 mb-3">
+          <div className="text-2xl">📲</div>
+          <div className="font-display text-2xl">INSTALL ON YOUR PHONE</div>
+        </div>
+        <p className="text-sm text-stone-600 mb-4">
+          Adds a Stompers icon to your home screen. Opens fullscreen — no browser bar — and works offline.
+        </p>
+
+        {canPrompt && (
+          <button
+            onClick={onTriggerPrompt}
+            className="w-full bg-lime-500 text-stone-900 font-display text-xl py-4 rounded-xl border-2 border-lime-600 active:scale-[0.98] transition mb-4"
+          >
+            ⬇ INSTALL NOW
+          </button>
+        )}
+
+        {isIOS && (
+          <div className="bg-stone-50 border border-stone-200 rounded-xl p-3 mb-3">
+            <div className="font-display text-sm text-stone-700 mb-2">📱 iPhone / iPad (Safari)</div>
+            <ol className="text-sm text-stone-700 space-y-1.5 list-decimal pl-5">
+              <li>Tap the <strong>Share</strong> button <span className="inline-block px-1.5 py-0.5 bg-white border border-stone-300 rounded text-xs">⬆</span> at the bottom of Safari.</li>
+              <li>Scroll down and tap <strong>Add to Home Screen</strong>.</li>
+              <li>Tap <strong>Add</strong> in the top-right.</li>
+            </ol>
+            {!isSafari && (
+              <p className="text-xs text-amber-700 mt-2 italic">Heads up: on iPhone, only <strong>Safari</strong> can install web apps. Open this page in Safari first.</p>
+            )}
+          </div>
+        )}
+
+        {isAndroid && !canPrompt && (
+          <div className="bg-stone-50 border border-stone-200 rounded-xl p-3 mb-3">
+            <div className="font-display text-sm text-stone-700 mb-2">🤖 Android (Chrome)</div>
+            <ol className="text-sm text-stone-700 space-y-1.5 list-decimal pl-5">
+              <li>Tap the <strong>⋮</strong> menu (top-right of Chrome).</li>
+              <li>Tap <strong>Install app</strong> or <strong>Add to Home screen</strong>.</li>
+              <li>Confirm <strong>Install</strong>.</li>
+            </ol>
+            <p className="text-xs text-stone-500 mt-2 italic">If you don't see the option, reload the page and try again.</p>
+          </div>
+        )}
+
+        {!isIOS && !isAndroid && !canPrompt && (
+          <div className="bg-stone-50 border border-stone-200 rounded-xl p-3 mb-3 text-sm text-stone-700">
+            <p>Look for an <strong>install</strong> or <strong>add to home screen</strong> option in your browser's menu (usually under <strong>⋮</strong> or the address bar).</p>
+          </div>
+        )}
+
+        <button
+          onClick={onClose}
+          className="w-full py-3 mt-2 rounded-xl bg-stone-100 text-stone-700 font-display text-base active:scale-[0.98] transition"
+        >
+          CLOSE
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function Stat({ label, value, accent }) {
+  return (
+    <div>
+      <div className={`font-display text-4xl ${accent}`}>{value}</div>
+      <div className="text-[10px] text-white/60 font-bold tracking-widest">{label}</div>
+    </div>
+  );
+}
+
+function TileButton({ onClick, icon, label, sub }) {
+  return (
+    <button
+      onClick={onClick}
+      className="bg-white border border-stone-200 rounded-2xl p-4 text-left active:scale-[0.98] transition shadow-sm"
+    >
+      <div className="w-10 h-10 rounded-xl bg-stone-900 text-lime-400 flex items-center justify-center mb-2">
+        {icon}
+      </div>
+      <div className="font-display text-lg leading-none">{label}</div>
+      <div className="text-xs text-stone-500 mt-1">{sub}</div>
+    </button>
+  );
+}
+
+/* ---------- ROSTER ---------- */
+function RosterView({ roster, onBack, onAdd, onEdit, onDelete, onBulkPhotos }) {
+  const sorted = [...roster].sort((a, b) => (parseInt(a.number) || 0) - (parseInt(b.number) || 0));
+  const bulkInputRef = React.useRef(null);
+  const [bulkBusy, setBulkBusy] = useState(false);
+
+  const handleBulkFiles = async (files) => {
+    if (!files || files.length === 0) return;
+    setBulkBusy(true);
+    try {
+      await onBulkPhotos(Array.from(files));
+    } finally {
+      setBulkBusy(false);
+      if (bulkInputRef.current) bulkInputRef.current.value = '';
+    }
+  };
+
+  return (
+    <div className="pb-24">
+      <Header title="ROSTER" onBack={onBack} right={
+        <button onClick={onAdd} className="bg-lime-500 text-stone-900 w-10 h-10 rounded-full flex items-center justify-center font-bold shadow active:scale-95 transition">
+          <Plus className="w-5 h-5" />
+        </button>
+      } />
+
+      <input
+        ref={bulkInputRef}
+        type="file"
+        accept="image/*"
+        multiple
+        className="hidden"
+        onChange={e => handleBulkFiles(e.target.files)}
+      />
+
+      {sorted.length > 0 && (
+        <div className="px-4 pt-3">
+          <button
+            onClick={() => bulkInputRef.current?.click()}
+            disabled={bulkBusy}
+            className="w-full bg-amber-100 text-amber-900 border-2 border-amber-300 font-bold text-sm py-3 rounded-xl active:scale-[0.99] transition disabled:opacity-50 flex items-center justify-center gap-2"
+          >
+            <span>📷</span>
+            <span>{bulkBusy ? 'Importing…' : 'BULK IMPORT PHOTOS'}</span>
+          </button>
+          <div className="text-[11px] text-stone-500 mt-1.5 text-center px-2">
+            Pick multiple files — names like <span className="font-mono">#10.PNG</span> match by jersey number.
+          </div>
+        </div>
+      )}
+
+      <div className="px-4 pt-4">
+        {sorted.length === 0 ? (
+          <div className="bg-white border border-stone-200 rounded-2xl p-8 text-center">
+            <Users className="w-10 h-10 text-stone-300 mx-auto mb-3" />
+            <div className="font-display text-xl mb-1">NO PLAYERS YET</div>
+            <div className="text-sm text-stone-500 mb-4">Add your squad to start logging games.</div>
+            <button onClick={onAdd} className="bg-stone-900 text-white px-5 py-3 rounded-full font-bold text-sm">
+              + Add first player
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {sorted.map(p => (
+              <div key={p.id} className="bg-white border border-stone-200 rounded-xl p-3 flex items-center gap-3">
+                <PlayerAvatar player={p} />
+                <div className="flex-1 min-w-0">
+                  <div className="font-bold truncate">{p.name}</div>
+                  {p.position && <div className="text-xs text-stone-500 uppercase tracking-wide">{p.position}</div>}
+                </div>
+                <button onClick={() => onEdit(p)} className="w-9 h-9 rounded-full bg-stone-100 flex items-center justify-center active:scale-95">
+                  <Edit3 className="w-4 h-4 text-stone-700" />
+                </button>
+                <button
+                  onClick={() => onDelete(p)}
+                  className="w-9 h-9 rounded-full bg-red-50 flex items-center justify-center active:scale-95"
+                >
+                  <Trash2 className="w-4 h-4 text-red-600" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ---------- PLAYER FORM ---------- */
+function PlayerForm({ player, onSave, onCancel }) {
+  const [name, setName] = useState(player?.name || '');
+  const [number, setNumber] = useState(player?.number || '');
+  const [position, setPosition] = useState(player?.position || '');
+  const [photo, setPhoto] = useState(player?.photo || '');
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = React.useRef(null);
+
+  const handlePhotoFile = async (file) => {
+    if (!file) return;
+    setUploading(true);
+    try {
+      const dataUrl = await resizePhoto(file, 256, 0.85);
+      setPhoto(dataUrl);
+    } catch (err) {
+      alert('Could not read that image. Try a different one.');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const valid = name.trim().length > 0;
+  const positions = ['GK', 'DEF', 'MID', 'FWD'];
+
+  return (
+    <div className="pb-24">
+      <Header title={player?.id ? 'EDIT PLAYER' : 'ADD PLAYER'} onBack={onCancel} />
+
+      <div className="px-4 pt-6 space-y-5">
+        <Field label="PHOTO">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={e => handlePhotoFile(e.target.files?.[0])}
+          />
+          <div className="flex items-center gap-4">
+            <div className="w-24 h-24 rounded-2xl overflow-hidden bg-stone-100 border-2 border-stone-200 flex items-center justify-center shrink-0">
+              {photo ? (
+                <img src={photo} alt="" className="w-full h-full object-cover" />
+              ) : (
+                <div className="text-stone-300 text-3xl">👤</div>
+              )}
+            </div>
+            <div className="flex-1 flex flex-col gap-2">
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploading}
+                className="bg-stone-900 text-white font-bold text-sm px-4 py-2.5 rounded-xl active:scale-[0.98] transition disabled:opacity-50"
+              >
+                {uploading ? 'Loading…' : (photo ? '📷 Change photo' : '📷 Add photo')}
+              </button>
+              {photo && (
+                <button
+                  type="button"
+                  onClick={() => setPhoto('')}
+                  className="bg-stone-100 text-stone-600 font-bold text-xs px-4 py-2 rounded-xl active:scale-[0.98] transition"
+                >
+                  Remove
+                </button>
+              )}
+            </div>
+          </div>
+        </Field>
+
+        <Field label="NAME">
+          <input
+            type="text"
+            value={name}
+            onChange={e => setName(e.target.value)}
+            placeholder="First name"
+            className="w-full bg-white border-2 border-stone-200 focus:border-stone-900 outline-none rounded-xl px-4 py-3 text-lg font-semibold"
+          />
+        </Field>
+
+        <Field label="JERSEY NUMBER">
+          <input
+            type="number"
+            inputMode="numeric"
+            value={number}
+            onChange={e => setNumber(e.target.value)}
+            placeholder="0"
+            className="w-full bg-white border-2 border-stone-200 focus:border-stone-900 outline-none rounded-xl px-4 py-3 text-2xl font-display tabular-nums"
+          />
+        </Field>
+
+        <Field label="POSITION">
+          <div className="grid grid-cols-4 gap-2">
+            {positions.map(pos => (
+              <button
+                key={pos}
+                type="button"
+                onClick={() => setPosition(position === pos ? '' : pos)}
+                className={`py-3 rounded-xl font-display text-lg border-2 transition ${
+                  position === pos
+                    ? 'bg-stone-900 text-lime-400 border-stone-900'
+                    : 'bg-white text-stone-700 border-stone-200'
+                }`}
+              >
+                {pos}
+              </button>
+            ))}
+          </div>
+        </Field>
+
+        <button
+          onClick={() => valid && onSave({ ...player, name: name.trim(), number, position, photo: photo || null })}
+          disabled={!valid}
+          className="w-full bg-lime-500 disabled:bg-stone-300 disabled:text-stone-500 text-stone-900 font-display text-2xl py-4 rounded-2xl shadow-lg shadow-lime-500/20 border-2 border-lime-600 disabled:border-stone-300 active:scale-[0.99] transition mt-4"
+        >
+          SAVE PLAYER
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function Field({ label, children }) {
+  return (
+    <div>
+      <label className="block text-xs font-bold tracking-widest text-stone-500 mb-2">{label}</label>
+      {children}
+    </div>
+  );
+}
+
+// Center-crop + resize an image File to a square JPEG data URL.
+// Keeps photos small enough to live inside the team Firestore doc (<30KB each).
+function resizePhoto(file, size = 256, quality = 0.85) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('read failed'));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error('decode failed'));
+      img.onload = () => {
+        const minSide = Math.min(img.width, img.height);
+        const sx = (img.width - minSide) / 2;
+        const sy = (img.height - minSide) / 2;
+        const canvas = document.createElement('canvas');
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, sx, sy, minSide, minSide, 0, 0, size, size);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+// Player avatar: photo if set, otherwise a colored number badge.
+// `sizeClass` controls dimensions (e.g. 'w-12 h-12'); `numberClasses` controls
+// the fallback badge bg/text colors so callers can encode GK / bench states.
+function PlayerAvatar({ player, sizeClass = 'w-12 h-12', numberClasses = 'bg-stone-900 text-lime-400', textSize = 'text-2xl', rounded = 'rounded-lg' }) {
+  if (player?.photo) {
+    return (
+      <div className={`${sizeClass} ${rounded} overflow-hidden bg-stone-100 shrink-0`}>
+        <img src={player.photo} alt="" className="w-full h-full object-cover" />
+      </div>
+    );
+  }
+  return (
+    <div className={`${sizeClass} ${rounded} ${numberClasses} flex items-center justify-center font-display ${textSize} tabular-nums shrink-0`}>
+      {player?.number || '—'}
+    </div>
+  );
+}
+
+/* ---------- GAME SETUP ---------- */
+function GameSetup({ rosterCount, onCancel, onStart, onGoRoster }) {
+  const [opponent, setOpponent] = useState('');
+  const [tournament, setTournament] = useState('Festival');
+  const [isHome, setIsHome] = useState(true);
+
+  if (rosterCount === 0) {
+    return (
+      <div>
+        <Header title="NEW GAME" onBack={onCancel} />
+        <div className="p-6 text-center">
+          <div className="bg-white border border-stone-200 rounded-2xl p-8">
+            <Users className="w-10 h-10 text-stone-300 mx-auto mb-3" />
+            <div className="font-display text-xl mb-2">ADD PLAYERS FIRST</div>
+            <div className="text-sm text-stone-500 mb-4">You need a roster before starting a game.</div>
+            <button onClick={onGoRoster} className="bg-stone-900 text-white px-5 py-3 rounded-full font-bold text-sm">
+              Go to Roster
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="pb-24">
+      <Header title="NEW GAME" onBack={onCancel} />
+
+      <div className="px-4 pt-6 space-y-5">
+        <Field label="TOURNAMENT">
+          <input
+            type="text"
+            value={tournament}
+            onChange={e => setTournament(e.target.value)}
+            placeholder="Festival"
+            className="w-full bg-white border-2 border-stone-200 focus:border-stone-900 outline-none rounded-xl px-4 py-3 text-lg font-semibold"
+          />
+        </Field>
+
+        <Field label="OPPONENT">
+          <input
+            type="text"
+            value={opponent}
+            onChange={e => setOpponent(e.target.value)}
+            placeholder="e.g., Lions FC"
+            className="w-full bg-white border-2 border-stone-200 focus:border-stone-900 outline-none rounded-xl px-4 py-3 text-lg font-semibold"
+          />
+        </Field>
+
+        <Field label="LOCATION">
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => setIsHome(true)}
+              className={`py-4 rounded-xl font-display text-2xl border-2 transition ${
+                isHome ? 'bg-stone-900 text-lime-400 border-stone-900' : 'bg-white text-stone-700 border-stone-200'
+              }`}
+            >
+              HOME
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsHome(false)}
+              className={`py-4 rounded-xl font-display text-2xl border-2 transition ${
+                !isHome ? 'bg-stone-900 text-lime-400 border-stone-900' : 'bg-white text-stone-700 border-stone-200'
+              }`}
+            >
+              AWAY
+            </button>
+          </div>
+        </Field>
+
+        <button
+          onClick={() => onStart(opponent.trim() || 'Opponent', isHome, tournament.trim() || 'Festival')}
+          className="w-full bg-lime-500 text-stone-900 font-display text-3xl py-5 rounded-2xl shadow-lg shadow-lime-500/30 border-2 border-lime-600 active:scale-[0.99] transition mt-4 flex items-center justify-center gap-3"
+        >
+          <Flag className="w-7 h-7" />
+          KICK OFF
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- MATCH-DAY SQUAD ---------- */
+function SquadPickerView({ roster, setup, initialSquad, onBack, onNext }) {
+  const sorted = [...roster].sort((a, b) => (parseInt(a.number) || 0) - (parseInt(b.number) || 0));
+  const SOFT_CAP = 12;
+  const [selected, setSelected] = useState(() =>
+    new Set(initialSquad && initialSquad.length > 0 ? initialSquad : sorted.map(p => p.id))
+  );
+
+  const toggle = (id) => {
+    const next = new Set(selected);
+    next.has(id) ? next.delete(id) : next.add(id);
+    setSelected(next);
+  };
+
+  const selectAll = () => setSelected(new Set(sorted.map(p => p.id)));
+  const clearAll = () => setSelected(new Set());
+
+  const overCap = selected.size > SOFT_CAP;
+  const canProceed = selected.size > 0;
+
+  return (
+    <div className="pb-40">
+      <Header title="MATCH-DAY SQUAD" onBack={onBack} />
+
+      <div className="px-4 pt-4">
+        <div className="text-xs text-stone-500 mb-1">vs {setup.opponent} · {setup.isHome ? 'Home' : 'Away'}</div>
+        <div className="text-sm text-stone-700 mb-3">
+          Tap players who are <span className="font-bold">available for this match</span>. Unchecked players are OUT.
+          Soft limit is <span className="font-bold">{SOFT_CAP}</span> (7v7 max squad) — you can exceed it if you need to.
+        </div>
+
+        <div className="flex gap-2 mb-4">
+          <button onClick={selectAll} className="flex-1 py-2 bg-stone-100 rounded-lg text-xs font-bold tracking-wider text-stone-700 active:scale-95">ALL IN</button>
+          <button onClick={clearAll} className="flex-1 py-2 bg-stone-100 rounded-lg text-xs font-bold tracking-wider text-stone-700 active:scale-95">ALL OUT</button>
+        </div>
+
+        <div className="space-y-1.5">
+          {sorted.map(p => {
+            const on = selected.has(p.id);
+            return (
+              <button
+                key={p.id}
+                onClick={() => toggle(p.id)}
+                className={`w-full flex items-center gap-3 p-2.5 rounded-xl border-2 text-left active:scale-[0.98] transition ${
+                  on ? 'bg-lime-50 border-lime-400' : 'bg-white border-stone-200 opacity-60'
+                }`}
+              >
+                <PlayerAvatar
+                  player={p}
+                  sizeClass="w-11 h-11"
+                  textSize="text-xl"
+                  numberClasses={on ? 'bg-stone-900 text-lime-400' : 'bg-stone-200 text-stone-500'}
+                />
+                <div className="flex-1 min-w-0">
+                  <div className="font-bold text-sm truncate">{p.name}</div>
+                  <div className={`text-[10px] font-bold tracking-wider ${on ? 'text-lime-700' : 'text-stone-400'}`}>
+                    {on ? 'AVAILABLE' : 'OUT'}{p.position ? ` · ${p.position}` : ''}
+                  </div>
+                </div>
+                <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 ${
+                  on ? 'bg-lime-500 border-lime-600' : 'bg-white border-stone-300'
+                }`}>
+                  {on && <span className="text-white text-sm font-bold">✓</span>}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-stone-200 p-4 shadow-xl">
+        <div className={`text-center text-sm mb-2 ${overCap ? 'text-amber-700' : 'text-stone-600'}`}>
+          <span className={`font-bold ${overCap ? 'text-amber-700' : 'text-lime-700'}`}>{selected.size}</span> in squad
+          {overCap && <span className="ml-1 text-xs">⚠ over {SOFT_CAP}</span>}
+        </div>
+        <button
+          onClick={() => canProceed && onNext(Array.from(selected))}
+          disabled={!canProceed}
+          className={`w-full font-display text-2xl py-4 rounded-2xl shadow-lg border-2 active:scale-[0.99] transition ${
+            canProceed
+              ? 'bg-stone-900 text-lime-400 border-stone-900'
+              : 'bg-stone-200 text-stone-400 border-stone-300 cursor-not-allowed'
+          }`}
+        >
+          NEXT: STARTING LINEUP →
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- STARTING LINEUP ---------- */
+function StartingLineupView({ roster, squad, setup, onBack, onStart }) {
+  // Only players in the matchday squad are eligible. Legacy fallback: whole roster.
+  const squadSet = squad && squad.length > 0 ? new Set(squad) : null;
+  const pool = squadSet ? roster.filter(p => squadSet.has(p.id)) : roster;
+  const sorted = [...pool].sort((a, b) => (parseInt(a.number) || 0) - (parseInt(b.number) || 0));
+  const [selected, setSelected] = useState(() => new Set(sorted.map(p => p.id)));
+  // Default the match GK to the first player with position='GK' if any.
+  const [gkId, setGkId] = useState(() => {
+    const defaultGK = sorted.find(p => p.position === 'GK');
+    return defaultGK ? defaultGK.id : null;
+  });
+
+  const toggle = (id) => {
+    const next = new Set(selected);
+    if (next.has(id)) {
+      next.delete(id);
+      // If we unselect the chosen GK, clear the tag too.
+      if (gkId === id) setGkId(null);
+    } else {
+      next.add(id);
+    }
+    setSelected(next);
+  };
+
+  const pickGK = (id, e) => {
+    e.stopPropagation();
+    // Picking GK auto-puts them on field.
+    if (!selected.has(id)) {
+      const next = new Set(selected);
+      next.add(id);
+      setSelected(next);
+    }
+    setGkId(gkId === id ? null : id);
+  };
+
+  const selectAll = () => setSelected(new Set(sorted.map(p => p.id)));
+  const clearAll = () => { setSelected(new Set()); setGkId(null); };
+
+  const gkPlayer = sorted.find(p => p.id === gkId);
+
+  return (
+    <div className="pb-40">
+      <Header title="STARTING LINEUP" onBack={onBack} />
+
+      <div className="px-4 pt-4">
+        <div className="text-xs text-stone-500 mb-1">vs {setup.opponent} · {setup.isHome ? 'Home' : 'Away'}</div>
+        <div className="text-sm text-stone-700 mb-3">Tap a player to put them on the field. Tap the <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 font-bold text-[10px]">🧤 GK</span> button on the right to assign the goalie.</div>
+
+        <div className="flex gap-2 mb-4">
+          <button onClick={selectAll} className="flex-1 py-2 bg-stone-100 rounded-lg text-xs font-bold tracking-wider text-stone-700 active:scale-95">ALL ON</button>
+          <button onClick={clearAll} className="flex-1 py-2 bg-stone-100 rounded-lg text-xs font-bold tracking-wider text-stone-700 active:scale-95">ALL BENCH</button>
+        </div>
+
+        <div className="space-y-1.5">
+          {sorted.map(p => {
+            const on = selected.has(p.id);
+            const isGK = gkId === p.id;
+            const isDefaultGK = p.position === 'GK';
+            return (
+              <div
+                key={p.id}
+                className={`relative w-full flex items-stretch rounded-xl border-2 transition ${
+                  on
+                    ? (isGK ? 'bg-amber-50 border-amber-400' : 'bg-lime-50 border-lime-400')
+                    : (isDefaultGK ? 'bg-amber-50/50 border-amber-200 opacity-60' : 'bg-white border-stone-200 opacity-60')
+                }`}
+              >
+                {isGK && (
+                  <div className="absolute -top-2 -left-2 bg-amber-400 text-stone-900 text-[10px] font-extrabold tracking-wider px-1.5 py-0.5 rounded-full border border-amber-600 shadow-sm flex items-center gap-0.5 z-10">
+                    <span>🧤</span><span>GK</span>
+                  </div>
+                )}
+                <button
+                  onClick={() => toggle(p.id)}
+                  className="flex-1 flex items-center gap-3 p-2.5 text-left active:scale-[0.98] transition"
+                >
+                  <PlayerAvatar
+                    player={p}
+                    sizeClass="w-11 h-11"
+                    textSize="text-xl"
+                    numberClasses={on
+                      ? (isGK ? 'bg-amber-500 text-stone-900' : 'bg-stone-900 text-lime-400')
+                      : 'bg-stone-200 text-stone-500'}
+                  />
+                  <div className="flex-1 min-w-0">
+                    <div className="font-bold text-sm truncate">{p.name}</div>
+                    <div className={`text-[10px] font-bold tracking-wider ${
+                      on ? (isGK ? 'text-amber-700' : 'text-lime-700') : 'text-stone-400'
+                    }`}>
+                      {on ? (isGK ? 'IN GOAL' : 'ON FIELD') : 'BENCH'}{isDefaultGK && !isGK ? ' · default GK' : ''}
+                    </div>
+                  </div>
+                  <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 ${
+                    on
+                      ? (isGK ? 'bg-amber-500 border-amber-600' : 'bg-lime-500 border-lime-600')
+                      : 'bg-white border-stone-300'
+                  }`}>
+                    {on && <span className="text-white text-sm font-bold">✓</span>}
+                  </div>
+                </button>
+                <button
+                  onClick={(e) => pickGK(p.id, e)}
+                  className={`shrink-0 w-12 flex flex-col items-center justify-center text-[10px] font-extrabold tracking-wider border-l-2 active:scale-[0.95] transition ${
+                    isGK
+                      ? 'bg-amber-400 text-stone-900 border-amber-500'
+                      : 'bg-white text-stone-400 border-stone-200 hover:text-amber-600'
+                  }`}
+                  aria-label={isGK ? 'Remove GK tag' : 'Set as GK'}
+                >
+                  <span className="text-lg leading-none">🧤</span>
+                  <span className="mt-0.5 leading-none">GK</span>
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-stone-200 p-4 shadow-xl">
+        <div className="text-center text-sm text-stone-600 mb-1">
+          <span className="font-bold text-lime-700">{selected.size}</span> on field · <span className="font-bold text-stone-500">{sorted.length - selected.size}</span> on bench
+        </div>
+        <div className="text-center text-xs mb-2">
+          {gkPlayer ? (
+            <span className="text-amber-700 font-bold">🧤 GK: {gkPlayer.name} #{gkPlayer.number}</span>
+          ) : (
+            <span className="text-red-600 font-bold">⚠ No goalie selected — tap the GK button on a player.</span>
+          )}
+        </div>
+        <button
+          onClick={() => onStart(Array.from(selected), gkId)}
+          disabled={!gkId}
+          className={`w-full font-display text-2xl py-4 rounded-2xl shadow-lg border-2 active:scale-[0.99] transition ${
+            gkId
+              ? 'bg-lime-500 text-stone-900 shadow-lime-500/30 border-lime-600'
+              : 'bg-stone-200 text-stone-400 border-stone-300 cursor-not-allowed'
+          }`}
+        >
+          ▶ START GAME
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- ACTIVE GAME ---------- */
+function ActiveGameView({ game, roster, pendingEvent, onSelectEvent, onSelectPlayer, onResolveOppGoal, onConfirmGK, onSwapGK, onCancelEvent, onUndo, onPauseHalfTime, onStartSecondHalf, onResumeFirstHalf, onEnd, onBack, tick }) {
+  const elapsed = computeElapsed(game);
+  const recent = [...game.events].reverse().slice(0, 6);
+  // Match-day squad limits who can be picked / subbed on. Legacy games without
+  // a `squad` field fall back to the whole roster.
+  const squadSet = game.squad && game.squad.length > 0 ? new Set(game.squad) : null;
+  const squadRoster = squadSet ? roster.filter(p => squadSet.has(p.id)) : roster;
+  const playersSorted = [...squadRoster].sort((a, b) => (parseInt(a.number) || 0) - (parseInt(b.number) || 0));
+  const gameGKId = currentGKAt(game);
+  // Live seconds-on-field per squad player, refreshed by `tick`.
+  const secondsByPlayer = useMemo(() => {
+    const m = {};
+    for (const p of squadRoster) m[p.id] = playerSeconds(p.id, game);
+    return m;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [game, tick]);
+
+  const inFirstHalf = game.period === 1 && game.clockRunning !== false;
+  const inHalfTimeBreak = game.period === 1 && game.clockRunning === false;
+  const inSecondHalf = game.period === 2;
+
+  const statusLabel = inHalfTimeBreak ? 'HALF TIME' : inSecondHalf ? '2ND HALF' : '1ST HALF';
+  const statusColor = inHalfTimeBreak ? 'bg-amber-400 text-stone-900' : 'bg-stone-900 text-lime-400';
+
+  return (
+    <div className="min-h-screen flex flex-col">
+      <div className="stripes-bg text-white px-4 pt-12 pb-4">
+        <div className="flex items-center justify-between mb-3">
+          <button onClick={onBack} className="text-white/70 active:scale-95">
+            <ChevronLeft className="w-6 h-6" />
+          </button>
+          <div className="text-center">
+            <div className="text-xs text-white font-bold tracking-widest truncate max-w-[180px]">
+              {game.tournament || 'Festival'}
+            </div>
+            <div className="text-[10px] text-white/50">
+              {formatDate(game.date)}
+            </div>
+          </div>
+          <div className="bg-white/10 text-white/90 px-3 py-1.5 rounded-full text-[10px] font-bold tracking-widest">
+            {game.isHome ? 'HOME' : 'AWAY'}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-3 items-center gap-3">
+          <div className="text-center">
+            <div className="text-[10px] font-bold tracking-widest text-lime-400">US</div>
+            <div className="font-display text-7xl leading-none tabular-nums">{game.ourScore}</div>
+          </div>
+          <div className="text-center">
+            <div className="text-[10px] font-bold tracking-widest text-white/50">
+              {game.clockRunning === false ? 'PAUSED' : 'CLOCK'}
+            </div>
+            <div className={`font-display text-3xl tabular-nums ${game.clockRunning === false ? 'text-white/50' : 'text-white/90'}`}>
+              {formatClock(elapsed)}
+            </div>
+            <div className="text-[10px] text-white/50 mt-0.5 truncate">vs {game.opponent}</div>
+          </div>
+          <div className="text-center">
+            <div className="text-[10px] font-bold tracking-widest text-red-400">OPP</div>
+            <div className="font-display text-7xl leading-none tabular-nums">{game.oppScore}</div>
+          </div>
+        </div>
+      </div>
+
+      {!pendingEvent && (
+        <div className="px-4 pt-3 flex items-center gap-2">
+          <div className={`${statusColor} flex-1 rounded-full py-2.5 text-center font-display text-base tracking-widest shadow`}>
+            {statusLabel}
+          </div>
+          {(() => {
+            const gk = roster.find(p => p.id === gameGKId);
+            return (
+              <button
+                onClick={onSwapGK}
+                className={`shrink-0 rounded-full px-3 py-2.5 font-display text-xs tracking-widest border-2 active:scale-95 transition flex items-center gap-1 ${
+                  gk
+                    ? 'bg-amber-400 text-stone-900 border-amber-500 shadow'
+                    : 'bg-red-100 text-red-700 border-red-300 animate-pulse'
+                }`}
+                title="Tap to swap goalie"
+              >
+                <span>🧤</span>
+                <span className="truncate max-w-[80px]">{gk ? `#${gk.number || '?'} ${gk.name.split(' ')[0]}` : 'NO GK'}</span>
+              </button>
+            );
+          })()}
+          {!inHalfTimeBreak && (
+            <button
+              onClick={() => onSelectEvent('__MINS__')}
+              className="shrink-0 rounded-full px-3 py-2.5 font-display text-xs tracking-widest border-2 bg-white text-stone-600 border-stone-200 active:scale-95 transition flex items-center gap-1"
+              title="Live minutes played"
+            >
+              <span>⏱</span>
+              <span>MINS</span>
+            </button>
+          )}
+        </div>
+      )}
+
+      <div className="flex-1 flex flex-col px-4 pt-4">
+        {pendingEvent?.type === 'MINS_VIEW' ? (() => {
+          const onField = onFieldAt(game);
+          const rows = [...playersSorted].sort((a, b) => (secondsByPlayer[b.id] || 0) - (secondsByPlayer[a.id] || 0));
+          const maxSec = Math.max(1, ...rows.map(p => secondsByPlayer[p.id] || 0));
+          return (
+            <div className="flex flex-col h-full min-h-0">
+              <div className="flex items-center justify-between mb-3 shrink-0">
+                <div>
+                  <div className="text-xs text-stone-500 font-bold tracking-widest">LIVE</div>
+                  <div className="font-display text-3xl flex items-center gap-2"><span>⏱</span><span>MINUTES</span></div>
+                </div>
+                <button onClick={onCancelEvent} className="w-11 h-11 rounded-full bg-stone-200 flex items-center justify-center active:scale-95">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="flex-1 overflow-y-auto pb-6 space-y-1.5">
+                {rows.map(p => {
+                  const sec = secondsByPlayer[p.id] || 0;
+                  const min = Math.round(sec / 60);
+                  const isOn = onField.has(p.id);
+                  const isGK = p.id === gameGKId;
+                  const pct = Math.round((sec / maxSec) * 100);
+                  return (
+                    <div key={p.id} className={`relative rounded-xl border-2 p-2.5 flex items-center gap-3 ${
+                      isGK ? 'bg-amber-50 border-amber-300' : isOn ? 'bg-lime-50 border-lime-300' : 'bg-white border-stone-200'
+                    }`}>
+                      <div className="absolute inset-y-0 left-0 rounded-xl opacity-30" style={{ width: `${pct}%`, background: isGK ? '#fbbf24' : isOn ? '#a3e635' : '#e7e5e4' }} />
+                      <div className="relative z-10 flex items-center gap-3 w-full">
+                        <PlayerAvatar player={p} sizeClass="w-10 h-10" textSize="text-lg" numberClasses={isGK ? 'bg-amber-500 text-stone-900' : isOn ? 'bg-stone-900 text-lime-400' : 'bg-stone-200 text-stone-500'} />
+                        <div className="flex-1 min-w-0">
+                          <div className="font-bold text-sm truncate">{p.name}</div>
+                          <div className="text-[10px] font-bold tracking-wider text-stone-500">
+                            {isGK ? '🧤 IN GOAL' : isOn ? 'ON FIELD' : 'BENCH'}{p.position ? ` · ${p.position}` : ''}
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className="font-display text-2xl tabular-nums leading-none">{min}</div>
+                          <div className="text-[9px] font-bold tracking-wider text-stone-500">MIN</div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+                {rows.length === 0 && (
+                  <div className="bg-white border border-stone-200 rounded-xl p-6 text-center text-stone-500 text-sm">
+                    No squad players.
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })() : pendingEvent?.type === 'NEW_GK' ? (() => {
+          const onField = onFieldAt(game);
+          // Allow picking the new goalie from the entire match-day squad —
+          // a fresh keeper coming off the bench is the common case.
+          const candidates = playersSorted;
+          const currentGKPlayer = roster.find(p => p.id === gameGKId);
+          return (
+            <div className="flex flex-col h-full min-h-0">
+              <div className="flex items-center justify-between mb-3 shrink-0">
+                <div>
+                  <div className="text-xs text-stone-500 font-bold tracking-widest">NEW GOALIE</div>
+                  <div className="font-display text-3xl flex items-center gap-2">
+                    <span>🧤</span>
+                    <span>WHO'S IN GOAL?</span>
+                  </div>
+                </div>
+                <button onClick={onCancelEvent} className="w-11 h-11 rounded-full bg-stone-200 flex items-center justify-center active:scale-95">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              {currentGKPlayer && (
+                <div className="mb-3 bg-stone-100 border border-stone-200 rounded-xl px-3 py-2 text-xs text-stone-600">
+                  Current GK: <span className="font-bold text-stone-800">{currentGKPlayer.name} #{currentGKPlayer.number}</span>
+                </div>
+              )}
+              <div className="grid grid-cols-2 gap-2.5 pb-6 overflow-y-auto">
+                {candidates.length === 0 && (
+                  <div className="col-span-2 bg-white border border-stone-200 rounded-xl p-6 text-center text-stone-500 text-sm">
+                    No players on the field.
+                  </div>
+                )}
+                {candidates.map(p => {
+                  const isDefault = p.id === pendingEvent.defaultGK;
+                  const isCurrent = p.id === gameGKId;
+                  const isOn = onField.has(p.id);
+                  return (
+                    <button
+                      key={p.id}
+                      onClick={() => onConfirmGK(p.id)}
+                      className={`relative rounded-xl p-3 flex items-center gap-3 active:scale-[0.97] transition text-left border-2 ${
+                        isDefault ? 'bg-amber-100 border-amber-500' : 'bg-white border-stone-200 hover:border-amber-400'
+                      }`}
+                    >
+                      {isCurrent && (
+                        <div className="absolute -top-2 -right-2 bg-stone-700 text-white text-[9px] font-extrabold tracking-wider px-1.5 py-0.5 rounded-full shadow-sm">CURRENT</div>
+                      )}
+                      <PlayerAvatar player={p} numberClasses="bg-amber-500 text-stone-900" />
+                      <div className="min-w-0 flex-1">
+                        <div className="font-bold text-sm truncate">{p.name}</div>
+                        <div className="text-[10px] text-amber-700 font-bold tracking-wider">
+                          {isDefault ? 'SUGGESTED' : (isOn ? 'ON FIELD' : 'BENCH')}{p.position === 'GK' ? ' · DEFAULT GK' : ''}
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+              <button
+                onClick={() => onConfirmGK(null)}
+                className="mt-1 w-full bg-white text-stone-600 border border-stone-300 font-display text-base py-3 rounded-xl active:scale-[0.98] transition"
+              >
+                NO GOALIE (empty net)
+              </button>
+            </div>
+          );
+        })() : pendingEvent?.type === 'OPP_GOAL_FAULT' ? (() => {
+          const onField = onFieldAt(game);
+          const gkPlayer = roster.find(p => p.id === gameGKId);
+          const gkOnField = gkPlayer && onField.has(gkPlayer.id) ? [gkPlayer] : [];
+          return (
+            <div className="flex flex-col h-full min-h-0">
+              <div className="flex items-center justify-between mb-4 shrink-0">
+                <div>
+                  <div className="text-xs text-stone-500 font-bold tracking-widest">OPP GOAL — GK FAULT?</div>
+                  <div className="font-display text-3xl flex items-center gap-2">
+                    <span>🚨</span>
+                    <span>WHY?</span>
+                  </div>
+                </div>
+                <button onClick={onCancelEvent} className="w-11 h-11 rounded-full bg-stone-200 flex items-center justify-center active:scale-95">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {gkOnField.length > 0 && (
+                <div className="mb-3 bg-amber-50 border border-amber-300 rounded-xl px-3 py-2 flex items-center gap-2">
+                  <span className="text-lg">🧤</span>
+                  <div className="text-xs text-amber-800">
+                    <span className="font-bold tracking-wider">GK ON FIELD:</span>{' '}
+                    {gkOnField.map(p => `${p.name} #${p.number}`).join(', ')}
+                  </div>
+                </div>
+              )}
+              {gkOnField.length === 0 && (
+                <div className="mb-3 bg-stone-100 border border-stone-200 rounded-xl px-3 py-2 text-xs text-stone-600">
+                  No goalie set for this match. Pick a tag anyway — it'll be saved for record.
+                </div>
+              )}
+
+              <button
+                onClick={() => onResolveOppGoal('gk')}
+                className="mb-2 w-full bg-red-100 text-red-900 border-2 border-red-400 font-display text-2xl py-5 rounded-2xl active:scale-[0.98] transition flex items-center justify-center gap-3"
+              >
+                <span className="text-3xl">🧤</span>
+                <span>GK FAULT</span>
+              </button>
+              <button
+                onClick={() => onResolveOppGoal('unstoppable')}
+                className="mb-2 w-full bg-stone-100 text-stone-800 border-2 border-stone-400 font-display text-2xl py-5 rounded-2xl active:scale-[0.98] transition flex items-center justify-center gap-3"
+              >
+                <span className="text-3xl">😮</span>
+                <span>UNSTOPPABLE</span>
+              </button>
+              <button
+                onClick={() => onResolveOppGoal(null)}
+                className="w-full bg-white text-stone-600 border border-stone-300 font-display text-base py-3 rounded-xl active:scale-[0.98] transition"
+              >
+                NEUTRAL / UNSURE
+              </button>
+            </div>
+          );
+        })() : pendingEvent ? (() => {
+          const isSub = pendingEvent.type === 'SUB';
+          const isGGPartner = pendingEvent.type === 'GIVE_GO_PARTNER';
+          let pickerEvent, pickerPlayers, pickerSkippable, pickerOnUnknown;
+          // GK floats to top so the keeper is instantly visible
+          const gkFirst = (a, b) => {
+            const ag = a.id === gameGKId ? 0 : 1;
+            const bg = b.id === gameGKId ? 0 : 1;
+            if (ag !== bg) return ag - bg;
+            return (parseInt(a.number) || 0) - (parseInt(b.number) || 0);
+          };
+          if (isSub) {
+            const onField = onFieldAt(game);
+            if (pendingEvent.step === 'OFF') {
+              pickerEvent = { emoji: '🔄', label: 'WHO\'S OFF?', requiresPlayer: true };
+              pickerPlayers = playersSorted.filter(p => onField.has(p.id)).sort(gkFirst);
+            } else {
+              pickerEvent = { emoji: '🔄', label: 'WHO\'S ON?', requiresPlayer: true };
+              pickerPlayers = playersSorted.filter(p => !onField.has(p.id) && p.id !== pendingEvent.offPlayerId).sort(gkFirst);
+            }
+            pickerSkippable = false;
+            pickerOnUnknown = null;
+          } else if (isGGPartner) {
+            // Step 2 of give & go: pick the wall-pass partner (or skip).
+            pickerEvent = { emoji: '🤝', label: 'WALL PASS PARTNER?', requiresPlayer: true };
+            const onField = onFieldAt(game);
+            pickerPlayers = playersSorted
+              .filter(p => onField.has(p.id) && p.id !== pendingEvent.initiatorId)
+              .sort(gkFirst);
+            pickerSkippable = true;
+            pickerOnUnknown = () => onSelectPlayer(null);
+          } else {
+            pickerEvent = EVENT_TYPES[pendingEvent.type];
+            const onField = onFieldAt(game);
+            pickerPlayers = playersSorted
+              .filter(p => onField.has(p.id) && p.id !== pendingEvent.excludePlayerId)
+              .sort(gkFirst);
+            pickerSkippable = pendingEvent.skippable;
+            pickerOnUnknown = pendingEvent.skippable ? () => onSelectPlayer(null) : null;
+          }
+          return (
+            <PlayerPicker
+              event={pickerEvent}
+              players={pickerPlayers}
+              gameGKId={gameGKId}
+              secondsByPlayer={isSub ? secondsByPlayer : null}
+              skippable={pickerSkippable}
+              onPick={onSelectPlayer}
+              onSkip={onCancelEvent}
+              onUnknown={pickerOnUnknown}
+              onCancel={onCancelEvent}
+              emptyMessage={isSub && pickerPlayers.length === 0
+                ? (pendingEvent.step === 'OFF' ? 'No one is on the field.' : 'Everyone is already on the field.')
+                : (isGGPartner && pickerPlayers.length === 0 ? 'No teammates available — tap SKIP.' : (!isSub && !isGGPartner && pickerPlayers.length === 0 ? 'No players on the field.' : null))}
+            />
+          );
+        })() : inHalfTimeBreak ? (
+          <div className="flex flex-col items-center text-center pt-6">
+            <div className="text-6xl mb-3">⏸️</div>
+            <div className="font-display text-4xl mb-2">HALF TIME</div>
+            <div className="text-stone-500 text-sm mb-8 max-w-xs">
+              Clock is paused. Tap below when the 2nd half kicks off.
+            </div>
+            <button
+              onClick={onStartSecondHalf}
+              className="w-full max-w-sm bg-lime-500 text-stone-900 font-display text-2xl py-5 rounded-2xl shadow-lg shadow-lime-500/30 border-2 border-lime-600 active:scale-[0.98] transition flex items-center justify-center gap-2"
+            >
+              <span>▶</span>
+              <span>START 2ND HALF</span>
+            </button>
+            <button
+              onClick={onResumeFirstHalf}
+              className="mt-3 text-stone-500 font-bold text-sm active:scale-95"
+            >
+              ← Back to 1st half
+            </button>
+
+            <div className="mt-8 w-full">
+              <h3 className="font-display text-lg mb-2 text-left">RECENT</h3>
+              <div className="space-y-1.5">
+                {recent.length === 0 && (
+                  <div className="text-sm text-stone-400 italic text-left">No events yet.</div>
+                )}
+                {recent.map(e => <EventRow key={e.id} event={e} roster={roster} />)}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <>
+            {/* Positive actions (top zone) — each adds to performance score.
+                GOAL is emphasised. ASSIST is captured automatically from the
+                GOAL flow, so it has no standalone button. */}
+            <div className="rounded-2xl border-2 border-lime-300 bg-lime-50/40 p-2">
+              <div className="flex items-center justify-between px-1 pb-1.5">
+                <div className="flex items-center gap-1.5 text-lime-800 font-display text-xs tracking-widest">
+                  <span className="w-5 h-5 rounded-full bg-lime-500 text-white flex items-center justify-center font-bold text-sm leading-none">+</span>
+                  <span>EARN</span>
+                </div>
+                <div className="text-[10px] text-lime-700/70 font-bold tracking-wider">RAISES SCORE</div>
+              </div>
+              <div className="grid grid-cols-4 gap-2">
+                {['GOAL', 'KEY_PASS', 'BALL_WIN', 'SHOT_ON', 'SAVE', 'BLOCK', 'DUEL_WIN', 'GIVE_GO', 'GATES', 'SHOT_OFF'].map(id => {
+                  const ev = EVENT_TYPES[id];
+                  const big = id === 'GOAL';
+                  return (
+                    <button
+                      key={ev.id}
+                      onClick={() => onSelectEvent(ev.id)}
+                      className={`relative ${TONE_CLASSES[ev.tone]} border-2 rounded-2xl ${big ? 'py-5' : 'py-4'} flex flex-col items-center justify-center gap-1 active:scale-[0.97] transition`}
+                    >
+                      <span className="absolute top-1 right-1.5 text-[10px] font-extrabold text-lime-700">+</span>
+                      <div className={`${big ? 'text-3xl' : 'text-2xl'}`}>{ev.emoji}</div>
+                      <div className={`font-sans-pro font-extrabold tracking-tight ${big ? 'text-base' : 'text-xs'} leading-none text-center`}>{ev.label}</div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Negative actions (bottom zone) — each subtracts from performance score. */}
+            <div className="mt-2.5 rounded-2xl border-2 border-red-300 bg-red-50/40 p-2">
+              <div className="flex items-center justify-between px-1 pb-1.5">
+                <div className="flex items-center gap-1.5 text-red-800 font-display text-xs tracking-widest">
+                  <span className="w-5 h-5 rounded-full bg-red-500 text-white flex items-center justify-center font-bold text-sm leading-none">−</span>
+                  <span>LOSE</span>
+                </div>
+                <div className="text-[10px] text-red-700/70 font-bold tracking-wider">LOWERS SCORE</div>
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                {['TURNOVER', 'HOLDS_BALL', 'DUEL_LOSE'].map(id => {
+                  const ev = EVENT_TYPES[id];
+                  return (
+                    <button
+                      key={ev.id}
+                      onClick={() => onSelectEvent(ev.id)}
+                      className={`relative ${TONE_CLASSES[ev.tone]} border-2 rounded-2xl py-4 flex flex-col items-center justify-center gap-1 active:scale-[0.97] transition`}
+                    >
+                      <span className="absolute top-1 right-1.5 text-[10px] font-extrabold text-red-700">−</span>
+                      <div className="text-2xl">{ev.emoji}</div>
+                      <div className="font-sans-pro font-extrabold tracking-tight text-xs leading-none text-center">{ev.label}</div>
+                    </button>
+                  );
+                })}
+              </div>
+              <button
+                onClick={() => onSelectEvent('OPP_GOAL')}
+                className={`relative mt-2 w-full ${TONE_CLASSES['big-red']} border-2 rounded-2xl py-3.5 flex items-center justify-center gap-3 active:scale-[0.97] transition`}
+              >
+                <span className="absolute top-1 right-2 text-[10px] font-extrabold text-red-100">−</span>
+                <span className="text-2xl">🚨</span>
+                <span className="font-sans-pro font-extrabold tracking-tight text-lg leading-none">OPP GOAL</span>
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 mt-2.5">
+              <button
+                onClick={() => onSelectEvent('SUB')}
+                className={`${TONE_CLASSES['purple']} border-2 rounded-2xl py-3.5 flex items-center justify-center gap-2 active:scale-[0.97] transition`}
+              >
+                <span className="text-2xl">🔄</span>
+                <span className="font-sans-pro font-extrabold tracking-tight text-base leading-none">SUBSTITUTION</span>
+              </button>
+              <button
+                onClick={onSwapGK}
+                className="bg-amber-100 text-amber-900 border-2 border-amber-400 rounded-2xl py-3.5 flex items-center justify-center gap-2 active:scale-[0.97] transition"
+              >
+                <span className="text-2xl">🧤</span>
+                <span className="font-sans-pro font-extrabold tracking-tight text-base leading-none">SWAP GK</span>
+              </button>
+            </div>
+
+            {inFirstHalf ? (
+              <button
+                onClick={onPauseHalfTime}
+                className="mt-2.5 w-full bg-amber-500 text-stone-900 font-display text-xl py-4 rounded-2xl active:scale-[0.99] transition border-2 border-amber-600 shadow"
+              >
+                ⏸ HALF TIME
+              </button>
+            ) : (
+              <button
+                onClick={onEnd}
+                className="mt-2.5 w-full bg-stone-900 text-white font-display text-xl py-4 rounded-2xl active:scale-[0.99] transition"
+              >
+                FINAL WHISTLE
+              </button>
+            )}
+
+            <div className="mt-5 flex-1 min-h-0">
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="font-display text-lg">RECENT</h3>
+                {game.events.length > 0 && (
+                  <button
+                    onClick={onUndo}
+                    className="text-xs font-bold text-stone-500 flex items-center gap-1 active:scale-95 bg-stone-100 px-3 py-1.5 rounded-full"
+                  >
+                    <Undo2 className="w-3.5 h-3.5" /> UNDO
+                  </button>
+                )}
+              </div>
+              <div className="space-y-1.5">
+                {recent.length === 0 && (
+                  <div className="text-sm text-stone-400 italic">No events yet — tap an action above when something happens.</div>
+                )}
+                {recent.map(e => <EventRow key={e.id} event={e} roster={roster} />)}
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+
+      <div className="pb-6"></div>
+    </div>
+  );
+}
+
+function PlayerPicker({ event, players, gameGKId, secondsByPlayer, skippable, onPick, onSkip, onUnknown, onCancel, emptyMessage }) {
+  return (
+    <div className="flex flex-col h-full min-h-0">
+      <div className="flex items-center justify-between mb-4 shrink-0">
+        <div>
+          <div className="text-xs text-stone-500 font-bold tracking-widest">WHO?</div>
+          <div className="font-display text-3xl flex items-center gap-2">
+            <span>{event.emoji}</span>
+            <span>{event.label}</span>
+          </div>
+        </div>
+        <button onClick={onCancel} className="w-11 h-11 rounded-full bg-stone-200 flex items-center justify-center active:scale-95">
+          <X className="w-5 h-5" />
+        </button>
+      </div>
+
+      {skippable && onUnknown && (
+        <button
+          onClick={onUnknown}
+          className="mb-2 w-full bg-stone-900 text-lime-400 font-display text-xl py-4 rounded-xl border-2 border-stone-900 active:scale-[0.98] transition flex items-center justify-center gap-2"
+        >
+          <span>❓</span>
+          <span>UNKNOWN PLAYER</span>
+        </button>
+      )}
+
+      {skippable && (
+        <button
+          onClick={onSkip}
+          className="mb-3 w-full bg-stone-50 text-stone-600 font-display text-sm py-2.5 rounded-xl border border-stone-200 active:scale-[0.98] transition"
+        >
+          NO {event.label}
+        </button>
+      )}
+
+      <div className="grid grid-cols-2 gap-2.5 pb-6 overflow-y-auto">
+        {players.length === 0 && emptyMessage && (
+          <div className="col-span-2 bg-white border border-stone-200 rounded-xl p-6 text-center text-stone-500 text-sm">
+            {emptyMessage}
+          </div>
+        )}
+        {players.map(p => {
+          // In-game: highlight the actual match GK. Outside a game (no gameGKId),
+          // fall back to the player's roster position.
+          const isGK = gameGKId ? (p.id === gameGKId) : (p.position === 'GK');
+          return (
+            <button
+              key={p.id}
+              onClick={() => onPick(p.id)}
+              className={`relative rounded-xl p-3 flex items-center gap-3 active:scale-[0.97] transition text-left border-2 ${
+                isGK
+                  ? 'bg-amber-50 border-amber-400 hover:border-amber-500'
+                  : 'bg-white border-stone-200 hover:border-stone-900'
+              }`}
+            >
+              {isGK && (
+                <div className="absolute -top-2 -right-2 bg-amber-400 text-stone-900 text-[10px] font-extrabold tracking-wider px-1.5 py-0.5 rounded-full border border-amber-600 shadow-sm flex items-center gap-0.5">
+                  <span>🧤</span><span>GK</span>
+                </div>
+              )}
+              <PlayerAvatar
+                player={p}
+                numberClasses={isGK ? 'bg-amber-500 text-stone-900' : 'bg-stone-900 text-lime-400'}
+              />
+              <div className="min-w-0 flex-1">
+                <div className="font-bold text-sm truncate">{p.name}</div>
+                {secondsByPlayer ? (
+                  <div className={`text-[10px] font-bold tracking-wider ${isGK ? 'text-amber-700' : 'text-stone-500'}`}>
+                    {Math.round((secondsByPlayer[p.id] || 0) / 60)} min{p.position ? ` · ${p.position}` : ''}
+                  </div>
+                ) : (p.position && (
+                  <div className={`text-[10px] font-bold tracking-wider ${isGK ? 'text-amber-700' : 'text-stone-500'}`}>
+                    {p.position}
+                  </div>
+                ))}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function EventRow({ event, roster, onDelete }) {
+  const isSub = event.type === 'SUB';
+  const ev = isSub
+    ? { emoji: '🔄', label: 'SUB', requiresPlayer: true }
+    : (EVENT_TYPES[event.type] || { emoji: '•', label: event.type, requiresPlayer: false });
+  const player = roster.find(p => p.id === event.playerId);
+  const subOnPlayer = isSub ? roster.find(p => p.id === event.subOnPlayerId) : null;
+  const partner = event.type === 'GIVE_GO' && event.partnerId
+    ? roster.find(p => p.id === event.partnerId) : null;
+  return (
+    <div className="bg-white border border-stone-200 rounded-lg px-3 py-2 flex items-center gap-3">
+      <div className="text-xl">{ev.emoji}</div>
+      <div className="flex-1 min-w-0">
+        <div className="text-sm font-bold">{ev.label}</div>
+        {isSub ? (
+          <div className="text-xs text-stone-600 truncate">
+            {subOnPlayer ? `${subOnPlayer.name} #${subOnPlayer.number}` : '?'} <span className="text-lime-600 font-bold">IN</span>
+            {' · '}
+            {player ? `${player.name} #${player.number}` : '?'} <span className="text-stone-500 font-bold">OUT</span>
+          </div>
+        ) : (
+          <>
+            {player && (
+              <div className="text-xs text-stone-600 truncate">
+                {player.name} · #{player.number}
+                {partner && (
+                  <span className="text-stone-500"> → 🤝 {partner.name} #{partner.number}</span>
+                )}
+              </div>
+            )}
+            {!player && ev.requiresPlayer && <div className="text-xs text-stone-500 italic">Unknown player</div>}
+            {!player && !ev.requiresPlayer && event.type !== 'OPP_GOAL' && <div className="text-xs text-stone-500">No player</div>}
+            {event.type === 'OPP_GOAL' && (
+              <div className="mt-0.5">
+                {event.gkFault === 'gk' && (
+                  <span className="inline-block text-[10px] font-extrabold tracking-wider px-1.5 py-0.5 rounded bg-red-100 text-red-700 border border-red-300">🧤 GK FAULT</span>
+                )}
+                {event.gkFault === 'unstoppable' && (
+                  <span className="inline-block text-[10px] font-extrabold tracking-wider px-1.5 py-0.5 rounded bg-stone-100 text-stone-700 border border-stone-300">😮 UNSTOPPABLE</span>
+                )}
+                {!event.gkFault && (
+                  <span className="text-[10px] text-stone-400 italic">unmarked</span>
+                )}
+              </div>
+            )}
+          </>
+        )}
+      </div>
+      <div className="text-xs text-stone-400 tabular-nums shrink-0">
+        {formatClock(event.elapsed)} · P{event.period}
+      </div>
+      {onDelete && (
+        <button onClick={() => onDelete(event.id)} className="w-7 h-7 rounded-full bg-red-50 flex items-center justify-center active:scale-95 shrink-0">
+          <Trash2 className="w-3.5 h-3.5 text-red-600" />
+        </button>
+      )}
+    </div>
+  );
+}
+
+/* ---------- PILLAR MINI BAR ---------- */
+function PillarMini({ label, value }) {
+  const color = value >= 6 ? 'bg-lime-500' : value >= 3 ? 'bg-sky-400' : value >= 0 ? 'bg-stone-300' : 'bg-red-400';
+  const width = Math.min(100, Math.max(5, (Math.abs(value) / 15) * 100));
+  return (
+    <div>
+      <div className="text-[9px] font-bold tracking-wider text-stone-500 mb-0.5">{label}</div>
+      <div className="h-2 bg-stone-100 rounded-full overflow-hidden">
+        <div className={`h-full rounded-full ${color}`} style={{ width: `${width}%` }}></div>
+      </div>
+      <div className="text-[10px] font-display tabular-nums text-stone-600 mt-0.5">{value}</div>
+    </div>
+  );
+}
+
+/* ---------- GAME DETAIL ---------- */
+function GameDetail({ game, roster, weights, onBack, onDelete, onDeleteEvent }) {
+  const events = [...game.events].sort((a, b) => a.at - b.at);
+  const result = game.ourScore > game.oppScore ? 'WIN' : game.ourScore < game.oppScore ? 'LOSS' : 'DRAW';
+  const resultColor = result === 'WIN' ? 'text-lime-400' : result === 'LOSS' ? 'text-red-400' : 'text-white/70';
+  const [shareMsg, setShareMsg] = useState(null);
+
+  const shareLiveLink = async () => {
+    const url = `${window.location.origin}${window.location.pathname}?live=${game.id}`;
+    const title = `Stompers vs ${game.opponent}`;
+    try {
+      if (navigator.share) {
+        await navigator.share({ title, text: `Live score \u2014 ${title}`, url });
+        return;
+      }
+    } catch (e) { /* user cancelled */ }
+    try {
+      await navigator.clipboard.writeText(url);
+      setShareMsg('Link copied!');
+      setTimeout(() => setShareMsg(null), 1800);
+    } catch (e) {
+      setShareMsg(url);
+      setTimeout(() => setShareMsg(null), 4000);
+    }
+  };
+
+  const tally = useMemo(() => {
+    const init = () => ({ GOAL: 0, ASSIST: 0, KEY_PASS: 0, SHOT_ON: 0, SHOT_OFF: 0, SAVE: 0, BLOCK: 0, BALL_WIN: 0, DUEL_WIN: 0, DUEL_LOSE: 0, GIVE_GO: 0, GIVE_GO_WALL: 0, GATES: 0, TURNOVER: 0, HOLDS_BALL: 0 });
+    const map = {};
+    for (const e of events) {
+      if (e.type === 'SUB') continue;
+      if (e.playerId) {
+        map[e.playerId] = map[e.playerId] || init();
+        if (map[e.playerId][e.type] !== undefined) map[e.playerId][e.type]++;
+      }
+      // Give & go wall partner gets credit too.
+      if (e.type === 'GIVE_GO' && e.partnerId) {
+        map[e.partnerId] = map[e.partnerId] || init();
+        map[e.partnerId].GIVE_GO_WALL++;
+      }
+    }
+    for (const p of roster) {
+      const sec = playerSeconds(p.id, game);
+      if (sec > 0) {
+        map[p.id] = map[p.id] || init();
+        map[p.id].seconds = sec;
+      }
+    }
+    return map;
+  }, [events, roster, game]);
+
+  return (
+    <div className="pb-24">
+      <div className="stripes-bg text-white px-4 pt-12 pb-5">
+        <div className="flex items-center justify-between mb-3">
+          <button onClick={onBack} className="text-white/70 active:scale-95">
+            <ChevronLeft className="w-6 h-6" />
+          </button>
+          <div className={`font-display text-xl ${resultColor}`}>{result}</div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={shareLiveLink}
+              title="Share live scoreboard link"
+              className="h-9 px-3 rounded-full bg-lime-400/90 text-stone-900 flex items-center gap-1 active:scale-95 font-bold text-xs"
+            >
+              📡 SHARE
+            </button>
+            <button
+              onClick={onDelete}
+              className="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center active:scale-95"
+            >
+              <Trash2 className="w-4 h-4 text-white/70" />
+            </button>
+          </div>
+        </div>
+        {shareMsg && (
+          <div className="text-center text-xs text-lime-300 -mt-1 mb-2">{shareMsg}</div>
+        )}
+        <div className="text-center text-xs text-white/70 mb-1">{game.tournament || 'Festival'} · {formatDate(game.date)} · {game.isHome ? 'Home' : 'Away'}</div>
+        <div className="text-center font-display text-2xl">vs {game.opponent}</div>
+        <div className="text-center font-display text-6xl tabular-nums mt-2">
+          {game.ourScore} <span className="text-white/40">–</span> {game.oppScore}
+        </div>
+      </div>
+
+      {/* Performance Scores */}
+      {Object.keys(tally).length > 0 && (
+        <div className="px-4 pt-5">
+          <h3 className="font-display text-xl mb-2">PERFORMANCE SCORES</h3>
+          <div className="bg-white border border-stone-200 rounded-2xl divide-y divide-stone-100">
+            {Object.entries(tally)
+              .map(([pid, stats]) => {
+                const min = Math.round((stats.seconds || 0) / 60);
+                const player = roster.find(p => p.id === pid);
+                // Treat as GK for scoring if they served any GK time in this game.
+                const wasGKThisGame = (game.gkPlayerId === pid) || (game.gkChanges || []).some(c => c.gkPlayerId === pid);
+                const pos = wasGKThisGame ? 'GK' : player?.position;
+                const gkExtras = wasGKThisGame ? gkExtrasForGame(pid, game) : undefined;
+                const score = computePerformanceScore(pid, events, min, pos, gkExtras, weights);
+                return { pid, stats, min, score, pos, gkExtras };
+              })
+              .sort((a, b) => b.score.overall - a.score.overall)
+              .map(({ pid, stats, min, score }) => {
+                const player = roster.find(p => p.id === pid);
+                const parts = [];
+                if (stats.GOAL) parts.push(`${stats.GOAL}G`);
+                if (stats.ASSIST) parts.push(`${stats.ASSIST}A`);
+                if (stats.KEY_PASS) parts.push(`${stats.KEY_PASS}🔑`);
+                if (stats.BALL_WIN) parts.push(`${stats.BALL_WIN}🔥`);
+                if (stats.SHOT_ON) parts.push(`${stats.SHOT_ON} on`);
+                if (stats.SAVE) parts.push(`${stats.SAVE} saves`);
+                if (stats.BLOCK) parts.push(`${stats.BLOCK} blocks`);
+                if (stats.DUEL_WIN || stats.DUEL_LOSE) parts.push(`1v1: ${stats.DUEL_WIN || 0}-${stats.DUEL_LOSE || 0}`);
+                if (stats.GIVE_GO) parts.push(`${stats.GIVE_GO} g&g`);
+                if (stats.GIVE_GO_WALL) parts.push(`${stats.GIVE_GO_WALL} wall`);
+                if (stats.GATES) parts.push(`${stats.GATES} gates`);
+                if (stats.TURNOVER) parts.push(`${stats.TURNOVER}💨`);
+                if (stats.HOLDS_BALL) parts.push(`${stats.HOLDS_BALL}⏳`);
+                return (
+                  <div key={pid} className="p-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-lg bg-stone-900 text-lime-400 flex items-center justify-center font-display text-xl tabular-nums">
+                        {player?.number || '—'}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="font-bold text-sm">{player?.name || 'Removed player'}</div>
+                        <div className="text-xs text-stone-500">{parts.join(' · ') || '—'}{min > 0 ? ` · ${min}min` : ''}</div>
+                      </div>
+                      <div className={`font-display text-2xl tabular-nums ${score.overall >= 8 ? 'text-lime-600' : score.overall >= 4 ? 'text-stone-900' : score.overall >= 0 ? 'text-stone-500' : 'text-red-600'}`}>
+                        {score.overall}
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-4 gap-1.5 mt-2">
+                      <PillarMini label="ATK" value={score.attacking} />
+                      <PillarMini label="DEF" value={score.defending} />
+                      <PillarMini label="DEC" value={score.decisions} />
+                      <PillarMini label="INV" value={score.involvement} />
+                    </div>
+                  </div>
+                );
+              })}
+          </div>
+        </div>
+      )}
+
+      <div className="px-4 pt-5">
+        <h3 className="font-display text-xl mb-2">TIMELINE</h3>
+        {events.length === 0 ? (
+          <div className="bg-white border border-stone-200 rounded-2xl p-6 text-center text-sm text-stone-500">
+            No events recorded.
+          </div>
+        ) : (
+          <div className="space-y-1.5">
+            {events.map(e => <EventRow key={e.id} event={e} roster={roster} onDelete={onDeleteEvent} />)}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ---------- STATS ---------- */
+function StatsView({ roster, games, weights, onBack }) {
+  const [detailPlayerId, setDetailPlayerId] = useState(null);
+  const finished = games.filter(g => g.status === 'finished');
+
+  const stats = useMemo(() => {
+    const init = () => ({ GOAL: 0, ASSIST: 0, KEY_PASS: 0, SHOT_ON: 0, SHOT_OFF: 0, SAVE: 0, BLOCK: 0, BALL_WIN: 0, DUEL_WIN: 0, DUEL_LOSE: 0, GIVE_GO: 0, GIVE_GO_WALL: 0, GATES: 0, TURNOVER: 0, HOLDS_BALL: 0, gamesPlayed: 0, totalSeconds: 0 });
+    const map = {};
+    for (const p of roster) map[p.id] = init();
+    for (const g of finished) {
+      const seen = new Set();
+      for (const e of g.events) {
+        if (e.type === 'SUB') continue;
+        if (e.playerId && map[e.playerId]) {
+          if (map[e.playerId][e.type] !== undefined) map[e.playerId][e.type]++;
+          seen.add(e.playerId);
+        }
+        // Give & go wall partner credit
+        if (e.type === 'GIVE_GO' && e.partnerId && map[e.partnerId]) {
+          map[e.partnerId].GIVE_GO_WALL++;
+          seen.add(e.partnerId);
+        }
+      }
+      for (const p of roster) {
+        const sec = playerSeconds(p.id, g);
+        if (sec > 0) {
+          if (map[p.id]) map[p.id].totalSeconds += sec;
+          seen.add(p.id);
+        }
+      }
+      for (const pid of seen) if (map[pid]) map[pid].gamesPlayed++;
+    }
+    return map;
+  }, [roster, finished]);
+
+  // Season performance score per player
+  const seasonScores = useMemo(() => {
+    const map = {};
+    for (const p of roster) {
+      const s = stats[p.id];
+      if (!s) continue;
+      const min = Math.round((s.totalSeconds || 0) / 60);
+      const allEvents = [];
+      for (const g of finished) {
+        for (const e of g.events) {
+          if (e.type === 'SUB') continue;
+          if (e.playerId === p.id) allEvents.push(e);
+          else if (e.type === 'GIVE_GO' && e.partnerId === p.id) allEvents.push(e);
+        }
+      }
+      // GK = roster position OR any game where they served as GK.
+      let wasGKAnyGame = p.position === 'GK';
+      let gkExtras;
+      gkExtras = { oppGoalsConceded: 0, concededPenalty: 0, cleanSheets: 0 };
+      for (const g of finished) {
+        const servedAsGK = (g.gkPlayerId === p.id) || (g.gkChanges || []).some(c => c.gkPlayerId === p.id);
+        if (servedAsGK) wasGKAnyGame = true;
+        if (servedAsGK) {
+          const gx = gkExtrasForGame(p.id, g);
+          gkExtras.oppGoalsConceded += gx.oppGoalsConceded;
+          gkExtras.concededPenalty += gx.concededPenalty;
+          gkExtras.cleanSheets += gx.cleanSheets;
+        }
+      }
+      const seasonPos = wasGKAnyGame ? 'GK' : p.position;
+      map[p.id] = computePerformanceScore(p.id, allEvents, min, seasonPos, wasGKAnyGame ? gkExtras : undefined, weights);
+    }
+    return map;
+  }, [roster, finished, stats]);
+
+  const sorted = [...roster].sort((a, b) => (seasonScores[b.id]?.overall || 0) - (seasonScores[a.id]?.overall || 0));
+  const detailPlayer = roster.find(p => p.id === detailPlayerId);
+
+  return (
+    <div className="pb-24">
+      <Header title="SEASON STATS" onBack={onBack} />
+
+      <div className="px-4 pt-5">
+        <div className="text-xs text-stone-500 mb-1">Based on {finished.length} completed game{finished.length === 1 ? '' : 's'}.</div>
+        <div className="text-xs text-stone-400 italic mb-3">Sorted by performance score. Tap a player for full breakdown.</div>
+
+        {roster.length === 0 ? (
+          <div className="bg-white border border-stone-200 rounded-2xl p-6 text-center text-sm text-stone-500">
+            Add players to track stats.
+          </div>
+        ) : (
+          <div className="bg-white border border-stone-200 rounded-2xl overflow-hidden">
+            <div className="grid grid-cols-[2.5rem_1fr_2rem_2.5rem_2rem_2rem_3rem] gap-1 px-3 py-2 bg-stone-100 text-[9px] font-bold tracking-wider text-stone-600">
+              <div>#</div>
+              <div>PLAYER</div>
+              <div className="text-center">GP</div>
+              <div className="text-center">MIN</div>
+              <div className="text-center">G</div>
+              <div className="text-center">A</div>
+              <div className="text-center">SCORE</div>
+            </div>
+            <div className="divide-y divide-stone-100">
+              {sorted.map(p => {
+                const s = stats[p.id] || {};
+                const min = Math.round((s.totalSeconds || 0) / 60);
+                const sc = seasonScores[p.id] || {};
+                return (
+                  <button
+                    key={p.id}
+                    onClick={() => setDetailPlayerId(p.id)}
+                    className="w-full grid grid-cols-[2.5rem_1fr_2rem_2.5rem_2rem_2rem_3rem] gap-1 px-3 py-3 items-center text-left active:bg-stone-50 transition"
+                  >
+                    <PlayerAvatar player={p} sizeClass="w-9 h-9" textSize="text-base" numberClasses="bg-stone-100 text-stone-900" />
+                    <div className="min-w-0">
+                      <div className="font-bold text-sm truncate">{p.name}</div>
+                      {p.position && <div className="text-[10px] text-stone-500 font-bold tracking-wider">{p.position}</div>}
+                    </div>
+                    <div className="text-center font-display text-sm tabular-nums text-stone-700">{s.gamesPlayed || 0}</div>
+                    <div className="text-center font-display text-sm tabular-nums text-sky-700">{min}</div>
+                    <div className="text-center font-display text-sm tabular-nums text-lime-700">{s.GOAL || 0}</div>
+                    <div className="text-center font-display text-sm tabular-nums text-stone-700">{s.ASSIST || 0}</div>
+                    <div className={`text-center font-display text-base tabular-nums ${(sc.overall || 0) >= 6 ? 'text-lime-600' : (sc.overall || 0) >= 3 ? 'text-stone-900' : 'text-stone-500'}`}>{sc.overall || 0}</div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        <div className="mt-4 bg-stone-100 rounded-xl p-3 text-xs text-stone-600">
+          <span className="font-bold">SCORE</span> = weighted per-20min rate (ATK 30% · DEF 25% · DEC 30% · INV 15%) · <span className="font-bold">GP</span> Games · <span className="font-bold">MIN</span> Minutes · <span className="font-bold">G</span> Goals · <span className="font-bold">A</span> Assists
+        </div>
+      </div>
+
+      {detailPlayer && (
+        <PlayerStatsDetail
+          player={detailPlayer}
+          stats={stats[detailPlayer.id] || {}}
+          score={seasonScores[detailPlayer.id] || {}}
+          onClose={() => setDetailPlayerId(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+/* ---------- PLAYER STATS DETAIL ---------- */
+function PlayerStatsDetail({ player, stats, score, onClose }) {
+  const min = Math.round((stats.totalSeconds || 0) / 60);
+  const rows = [
+    { label: 'Games played', value: stats.gamesPlayed || 0 },
+    { label: 'Minutes played', value: min },
+    { label: 'Goals', value: stats.GOAL || 0, accent: 'text-lime-700' },
+    { label: 'Assists', value: stats.ASSIST || 0, accent: 'text-lime-700' },
+    { label: 'Key passes', value: stats.KEY_PASS || 0, accent: 'text-lime-700' },
+    { label: 'Shots on target', value: stats.SHOT_ON || 0 },
+    { label: 'Shots off target', value: stats.SHOT_OFF || 0 },
+    { label: 'Ball wins', value: stats.BALL_WIN || 0, accent: 'text-lime-700' },
+    { label: 'Saves', value: stats.SAVE || 0 },
+    { label: 'Blocks', value: stats.BLOCK || 0 },
+    { label: '1v1 duels won', value: stats.DUEL_WIN || 0, accent: 'text-lime-700' },
+    { label: '1v1 duels lost', value: stats.DUEL_LOSE || 0, accent: 'text-red-700' },
+    { label: 'Give-and-go', value: stats.GIVE_GO || 0 },
+    { label: 'Gate passes', value: stats.GATES || 0 },
+    { label: 'Turnovers', value: stats.TURNOVER || 0, accent: 'text-red-700' },
+    { label: 'Holds ball too long', value: stats.HOLDS_BALL || 0, accent: 'text-amber-700' },
+  ];
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm" onClick={onClose}>
+      <div
+        className="bg-white rounded-t-3xl sm:rounded-2xl w-full sm:max-w-md max-h-[85vh] overflow-y-auto shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="sticky top-0 bg-white border-b border-stone-200 px-5 py-4 flex items-center gap-3 z-10">
+          <div className="w-12 h-12 rounded-xl bg-stone-900 text-lime-400 flex items-center justify-center font-display text-2xl tabular-nums">
+            {player.number || '—'}
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="font-display text-xl truncate">{player.name}</div>
+            {player.position && <div className="text-xs text-stone-500 font-bold tracking-wider">{player.position}</div>}
+          </div>
+          <button onClick={onClose} className="w-10 h-10 rounded-full bg-stone-100 flex items-center justify-center active:scale-95">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        <div className="p-5">
+          <div className="bg-stone-50 rounded-xl p-4 mb-4">
+            <div className="flex items-center justify-between mb-3">
+              <div className="font-display text-lg">PERFORMANCE SCORE</div>
+              <div className={`font-display text-3xl tabular-nums ${(score.overall || 0) >= 6 ? 'text-lime-600' : (score.overall || 0) >= 3 ? 'text-stone-900' : 'text-stone-500'}`}>{score.overall || 0}</div>
+            </div>
+            <div className="grid grid-cols-4 gap-2">
+              <PillarMini label="ATK" value={score.attacking || 0} />
+              <PillarMini label="DEF" value={score.defending || 0} />
+              <PillarMini label="DEC" value={score.decisions || 0} />
+              <PillarMini label="INV" value={score.involvement || 0} />
+            </div>
+          </div>
+
+          <div className="divide-y divide-stone-100">
+            {rows.map(r => (
+              <div key={r.label} className="flex items-center justify-between py-3">
+                <div className="text-sm text-stone-700">{r.label}</div>
+                <div className={`font-display text-2xl tabular-nums ${r.accent || 'text-stone-900'}`}>{r.value}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- LOCK SCREEN ---------- */
+function LockScreen({ onUnlock }) {
+  const [code, setCode] = useState('');
+  const [error, setError] = useState(false);
+
+  const handleSubmit = () => {
+    if (code.trim() === COACH_PASS) {
+      onUnlock();
+    } else {
+      setError(true);
+      setCode('');
+      setTimeout(() => setError(false), 1500);
+    }
+  };
+
+  return (
+    <div className="min-h-screen stripes-bg flex flex-col items-center justify-center px-6 text-center">
+      <style>{FONT_STYLES}</style>
+      <img
+        src="./stompers_logo.png"
+        alt="LaSalle Stompers"
+        className="w-28 h-28 mb-4 drop-shadow-lg"
+        onError={(e) => { e.currentTarget.style.display = 'none'; }}
+      />
+      <div className="font-display text-5xl text-white leading-none">LASALLE</div>
+      <div className="font-display text-3xl text-lime-400 leading-tight mb-2">STOMPERS</div>
+      <div className="text-white/50 text-xs font-bold tracking-widest mb-8">COACH ACCESS</div>
+
+      <div className="w-full max-w-xs">
+        <label className="block text-white/70 text-xs font-bold tracking-widest mb-2">ENTER COACH PASSWORD</label>
+        <input
+          type="password"
+          autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck={false}
+          value={code}
+          onChange={e => setCode(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && handleSubmit()}
+          placeholder="••••••••"
+          className={`w-full text-center text-2xl font-display py-4 rounded-xl border-2 outline-none transition ${
+            error
+              ? 'bg-red-100 border-red-400 text-red-700 animate-[shake_0.3s_ease-in-out]'
+              : 'bg-white border-stone-200 text-stone-900'
+          }`}
+          autoFocus
+        />
+        {error && <div className="text-red-400 text-sm font-bold mt-2">Wrong password. Try again.</div>}
+        <button
+          onClick={handleSubmit}
+          className="mt-4 w-full bg-lime-500 text-stone-900 font-display text-2xl py-4 rounded-xl shadow-lg shadow-lime-500/30 border-2 border-lime-600 active:scale-[0.98] transition"
+        >
+          ENTER
+        </button>
+        <div className="mt-6 text-white/40 text-xs">
+          Looking for the live scoreboard? <a href="./" className="text-lime-400 underline">Tap here</a>.
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- HEADER ---------- */
+function WeightsView({ weights, onSave, onBack }) {
+  const [draft, setDraft] = useState(() => mergeWeights(weights));
+  const [tab, setTab] = useState('actions'); // 'actions' | 'pillars'
+
+  const setPoint = (group, key, raw) => {
+    // Allow empty string (mid-edit) or minus sign without committing yet.
+    const v = raw === '' || raw === '-' ? raw : Number(raw);
+    setDraft(d => ({ ...d, [group]: { ...d[group], [key]: v } }));
+  };
+  const setPillar = (role, key, raw) => {
+    const v = raw === '' ? '' : Number(raw);
+    setDraft(d => ({ ...d, pillars: { ...d.pillars, [role]: { ...d.pillars[role], [key]: v } } }));
+  };
+
+  const normalize = (w) => {
+    const fix = (obj) => {
+      const out = {};
+      for (const [k, v] of Object.entries(obj)) {
+        const n = typeof v === 'number' ? v : Number(v);
+        out[k] = Number.isFinite(n) ? n : 0;
+      }
+      return out;
+    };
+    return {
+      points: fix(w.points),
+      gkPoints: fix(w.gkPoints),
+      pillars: { outfield: fix(w.pillars.outfield), gk: fix(w.pillars.gk) },
+    };
+  };
+
+  const saveAndExit = async () => {
+    await onSave(normalize(draft));
+    onBack();
+  };
+
+  const resetDefaults = () => setDraft(mergeWeights(DEFAULT_WEIGHTS));
+
+  // Field labels: [key, label, emoji, pillar].
+  const ATK_ROWS = [
+    ['GOAL_atk',     'Goal',         '⚽'],
+    ['ASSIST_atk',   'Assist',       '🅰️'],
+    ['KEY_PASS_atk', 'Key pass',     '🔑'],
+    ['SHOT_ON_atk',  'Shot on',      '🎯'],
+    ['SHOT_OFF_atk', 'Shot off',     '❌'],
+  ];
+  const DEF_ROWS = [
+    ['SAVE_def',        'Save',         '🧤'],
+    ['BLOCK_def',       'Block',        '🛡️'],
+    ['BALL_WIN_def',    'Ball win',     '🔥'],
+    ['DUEL_WIN_def',    '1v1 win',      '💪'],
+    ['DUEL_LOSE_def',   '1v1 lose',     '💢'],
+    ['CLEAN_SHEET_def', 'Clean sheet (GK)', '🧱'],
+  ];
+  const DEC_ROWS = [
+    ['GIVE_GO_dec',         'Give & go (initiator)',    '🔄'],
+    ['GIVE_GO_PARTNER_dec', 'Give & go (wall partner)', '🤝'],
+    ['GATES_dec',      'Gates',       '🚪'],
+    ['KEY_PASS_dec',   'Key pass',    '🔑'],
+    ['ASSIST_dec',     'Assist',      '🅰️'],
+    ['HOLDS_BALL_dec', 'Holds ball',  '🛑'],
+    ['TURNOVER_dec',   'Turnover',    '🔁'],
+  ];
+
+  const renderPointRow = (group, [key, label, emoji]) => {
+    const val = draft[group][key];
+    const isNeg = typeof val === 'number' && val < 0;
+    return (
+      <div key={key} className="flex items-center justify-between gap-3 py-2 border-b border-stone-100 last:border-b-0">
+        <div className="flex items-center gap-2 flex-1 min-w-0">
+          <span className="text-lg">{emoji}</span>
+          <span className="text-sm text-stone-700 truncate">{label}</span>
+        </div>
+        <input
+          type="number"
+          step="1"
+          inputMode="numeric"
+          value={val}
+          onChange={(e) => setPoint(group, key, e.target.value)}
+          className={`w-20 text-center font-display text-lg py-1 rounded-lg border-2 ${isNeg ? 'border-red-300 bg-red-50 text-red-700' : 'border-stone-200 bg-white text-stone-800'} focus:outline-none focus:border-stone-500`}
+        />
+      </div>
+    );
+  };
+
+  const PointsSection = ({ group }) => (
+    <div className="space-y-4">
+      <div className="bg-white rounded-2xl border-2 border-lime-200 px-4 py-3">
+        <div className="font-display text-sm text-lime-700 mb-1">ATTACKING</div>
+        {ATK_ROWS.map(r => renderPointRow(group, r))}
+      </div>
+      <div className="bg-white rounded-2xl border-2 border-sky-200 px-4 py-3">
+        <div className="font-display text-sm text-sky-700 mb-1">DEFENDING</div>
+        {DEF_ROWS.map(r => renderPointRow(group, r))}
+      </div>
+      <div className="bg-white rounded-2xl border-2 border-amber-200 px-4 py-3">
+        <div className="font-display text-sm text-amber-700 mb-1">DECISIONS</div>
+        {DEC_ROWS.map(r => renderPointRow(group, r))}
+      </div>
+      <p className="text-xs text-stone-500 px-1">
+        Points per action. Negative values penalize the score. Goalkeepers and outfield players use the same per-action values — their roles differ via the PILLAR mix.
+      </p>
+    </div>
+  );
+
+  const PillarsSection = () => {
+    const sum = (role) => ['atk', 'def', 'dec', 'inv'].reduce((s, k) => s + (Number(draft.pillars[role][k]) || 0), 0);
+    const renderPillar = (role, label) => {
+      const s = sum(role);
+      const ok = s === 100;
+      return (
+        <div className="bg-white rounded-2xl border-2 border-stone-200 px-4 py-3">
+          <div className="flex items-center justify-between mb-2">
+            <div className="font-display text-sm text-stone-700">{label}</div>
+            <div className={`text-xs font-display ${ok ? 'text-lime-700' : 'text-red-600'}`}>Σ {s}%</div>
+          </div>
+          <div className="grid grid-cols-4 gap-2">
+            {[['atk', 'ATK'], ['def', 'DEF'], ['dec', 'DEC'], ['inv', 'INV']].map(([k, lab]) => (
+              <label key={k} className="flex flex-col items-center gap-1">
+                <span className="text-[10px] font-display text-stone-500">{lab}</span>
+                <input
+                  type="number"
+                  step="1"
+                  min="0"
+                  max="100"
+                  inputMode="numeric"
+                  value={draft.pillars[role][k]}
+                  onChange={(e) => setPillar(role, k, e.target.value)}
+                  className="w-full text-center font-display text-base py-1 rounded-lg border-2 border-stone-200 bg-white focus:outline-none focus:border-stone-500"
+                />
+              </label>
+            ))}
+          </div>
+        </div>
+      );
+    };
+    return (
+      <div className="space-y-4">
+        {renderPillar('outfield', 'OUTFIELD pillar mix')}
+        {renderPillar('gk',       'GOALKEEPER pillar mix')}
+        <p className="text-xs text-stone-500 px-1">
+          Overall score = weighted blend of the four pillars (ATK · DEF · DEC · INV). Values are percentages — each row should sum to 100.
+        </p>
+      </div>
+    );
+  };
+
+  const TabBtn = ({ id, label }) => (
+    <button
+      onClick={() => setTab(id)}
+      className={`flex-1 py-2 font-display text-sm rounded-xl border-2 transition ${tab === id ? 'bg-stone-900 text-white border-stone-900' : 'bg-white text-stone-600 border-stone-200'}`}
+    >
+      {label}
+    </button>
+  );
+
+  return (
+    <div className="pb-32">
+      <Header
+        title="SCORING WEIGHTS"
+        onBack={onBack}
+        right={
+          <button
+            onClick={resetDefaults}
+            className="text-xs font-display text-stone-500 hover:text-stone-800 px-2 py-1 rounded-lg border border-stone-200"
+          >
+            RESET
+          </button>
+        }
+      />
+
+      <div className="px-4 pt-3 flex items-center gap-2">
+        <TabBtn id="actions" label="ACTIONS" />
+        <TabBtn id="pillars" label="PILLARS" />
+      </div>
+
+      <div className="px-4 pt-4">
+        {tab === 'actions' && <PointsSection group="points" />}
+        {tab === 'pillars' && <PillarsSection />}
+      </div>
+
+      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-stone-200 px-4 py-3 flex gap-2">
+        <button
+          onClick={onBack}
+          className="flex-1 py-3 rounded-xl border-2 border-stone-200 bg-white text-stone-700 font-display"
+        >
+          CANCEL
+        </button>
+        <button
+          onClick={saveAndExit}
+          className="flex-1 py-3 rounded-xl bg-lime-500 hover:bg-lime-600 text-stone-900 font-display border-2 border-lime-600"
+        >
+          SAVE
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function HelpView({ onBack }) {
+  const [openId, setOpenId] = useState('welcome');
+  const toggle = (id) => setOpenId(prev => prev === id ? null : id);
+
+  const Section = ({ id, emoji, title, summary, children }) => {
+    const isOpen = openId === id;
+    return (
+      <div className="bg-white border-2 border-stone-200 rounded-2xl overflow-hidden">
+        <button
+          onClick={() => toggle(id)}
+          className="w-full text-left px-4 py-3 flex items-start gap-3 active:bg-stone-50"
+        >
+          <span className="text-2xl leading-none">{emoji}</span>
+          <div className="flex-1 min-w-0">
+            <div className="font-display text-base leading-tight">{title}</div>
+            {summary && <div className="text-xs text-stone-500 mt-0.5">{summary}</div>}
+          </div>
+          <ChevronRight className={`w-5 h-5 text-stone-400 mt-1 transition-transform ${isOpen ? 'rotate-90' : ''}`} />
+        </button>
+        {isOpen && (
+          <div className="px-4 pb-4 pt-1 text-sm text-stone-700 leading-relaxed space-y-2 border-t border-stone-100">
+            {children}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const Pill = ({ children, tone = 'stone' }) => {
+    const tones = {
+      stone: 'bg-stone-100 text-stone-700 border-stone-300',
+      lime:  'bg-lime-100 text-lime-800 border-lime-400',
+      red:   'bg-red-100 text-red-800 border-red-400',
+      amber: 'bg-amber-100 text-amber-900 border-amber-400',
+      sky:   'bg-sky-100 text-sky-800 border-sky-400',
+      purple:'bg-purple-100 text-purple-800 border-purple-400',
+    };
+    return <span className={`inline-block px-2 py-0.5 rounded-md text-[11px] font-bold border ${tones[tone]} mx-0.5`}>{children}</span>;
+  };
+
+  const Step = ({ n, children }) => (
+    <div className="flex gap-2">
+      <div className="shrink-0 w-5 h-5 rounded-full bg-stone-900 text-lime-400 text-[11px] font-bold flex items-center justify-center mt-0.5">{n}</div>
+      <div className="flex-1">{children}</div>
+    </div>
+  );
+
+  return (
+    <div className="pb-24 bg-stone-50 min-h-screen">
+      <Header title="HELP & GUIDE" onBack={onBack} />
+
+      <div className="px-4 pt-3 space-y-2.5">
+        <Section
+          id="welcome"
+          emoji="👋"
+          title="Welcome"
+          summary="What this app does, in one screen"
+        >
+          <p>
+            This is your <strong>match-day tracker</strong>. Before each game you build a
+            squad of available players, set the starting lineup, then log every meaningful
+            moment as it happens. After the whistle you get per-player ratings, minutes,
+            and season totals.
+          </p>
+          <p>The basic flow is always the same:</p>
+          <Step n={1}>Tap <Pill tone="lime">START GAME</Pill> → opponent → squad → starting 7.</Step>
+          <Step n={2}>During play, tap actions as they happen.</Step>
+          <Step n={3}>End the game → scores save → review in <Pill>STATS</Pill> &amp; past games.</Step>
+          <p className="text-xs text-stone-500">All data syncs to the cloud, so other coaches with the link see the same roster and live games.</p>
+        </Section>
+
+        <Section id="start" emoji="🚀" title="1 · Starting a match" summary="Opponent → squad → lineup → GK">
+          <p>From Home tap <Pill tone="lime">START GAME</Pill> and walk through the wizard:</p>
+          <Step n={1}><strong>Game setup</strong>: opponent name, Home/Away, tournament/festival label.</Step>
+          <Step n={2}><strong>Squad picker</strong>: tick who's actually available today. For 7v7 leagues that cap rosters at 12, you'll see a soft warning over 12 — but no hard limit.</Step>
+          <Step n={3}><strong>Starting lineup</strong>: pick the 7 (or however many) who start on the field. Everyone else begins on the bench.</Step>
+          <Step n={4}><strong>Goalkeeper</strong>: tap the player wearing the gloves. You can change keeper at any time during the game.</Step>
+          <p className="text-xs text-stone-500">If you mis-pick the squad, tap <ChevronLeft className="inline w-3 h-3" /> to go back at any step — nothing is saved until kick-off.</p>
+        </Section>
+
+        <Section id="clock" emoji="⏱" title="2 · The clock & periods" summary="First half, half time, second half">
+          <p>The clock starts as soon as the lineup is confirmed. It runs as <strong>1st half → half-time pause → 2nd half</strong>.</p>
+          <ul className="list-disc pl-5 space-y-1">
+            <li>Tap <Pill tone="amber">PAUSE FOR HALF TIME</Pill> when the ref blows for halftime — minutes stop counting.</li>
+            <li>Tap <Pill tone="lime">START 2ND HALF</Pill> at kickoff.</li>
+            <li>If you paused too early, <Pill>RESUME 1ST HALF</Pill> undoes the pause.</li>
+            <li>Tap <Pill tone="red">END GAME</Pill> at the final whistle. The score and all stats lock in.</li>
+          </ul>
+        </Section>
+
+        <Section id="actions" emoji="🎯" title="3 · Logging actions (EARN / LOSE)" summary="Tap event → tap player">
+          <p>The action grid is split into two zones so the value of each tap is obvious:</p>
+          <div className="bg-lime-50 border-2 border-lime-300 rounded-xl p-3">
+            <div className="font-display text-sm text-lime-800 mb-1">EARN <span className="text-lime-700">+</span></div>
+            Good things your players do: <Pill tone="lime">⚽ GOAL</Pill> <Pill tone="lime">🔑 KEY PASS</Pill> <Pill tone="lime">🎯 SHOT ON</Pill> <Pill tone="lime">🧤 SAVE</Pill> <Pill tone="lime">🛡 BLOCK</Pill> <Pill tone="lime">🔥 BALL WIN</Pill> <Pill tone="lime">💪 1V1 WIN</Pill> <Pill tone="lime">🔄 GIVE &amp; GO</Pill> <Pill tone="lime">🚪 GATES</Pill>
+          </div>
+          <div className="bg-red-50 border-2 border-red-300 rounded-xl p-3">
+            <div className="font-display text-sm text-red-800 mb-1">LOSE <span className="text-red-700">−</span></div>
+            Things that hurt the score: <Pill tone="red">🛑 HOLDS BALL</Pill> <Pill tone="red">🔁 TURNOVER</Pill> <Pill tone="red">💢 1V1 LOSE</Pill> <Pill tone="red">🚨 OPP GOAL</Pill>
+          </div>
+          <p>Flow for every action:</p>
+          <Step n={1}>Tap the action button.</Step>
+          <Step n={2}>The picker shows everyone <strong>currently on the field</strong>. Tap the player.</Step>
+          <Step n={3}>For <Pill tone="lime">GOAL</Pill> you're asked if there was an assist — pick the assister, or <em>NO ASSIST</em>.</Step>
+          <Step n={4}>For <Pill tone="lime">🔄 GIVE &amp; GO</Pill> you're asked for the <strong>wall-pass partner</strong> — the teammate who returned the ball. Initiator gets full credit, partner gets half. Tap <em>SKIP</em> if you didn't catch who.</Step>
+          <Step n={5}>For <Pill tone="red">OPP GOAL</Pill> you'll be asked whose fault it was: <em>GK</em>, <em>UNSTOPPABLE</em>, or <em>NEUTRAL</em>. Affects the keeper's score.</Step>
+          <p className="text-xs text-stone-500">Tapped the wrong thing? Use <Pill>↶ UNDO</Pill> in the RECENT panel to remove the last event.</p>
+        </Section>
+
+        <Section id="subs" emoji="🔄" title="4 · Substitutions & GK swaps" summary="Two-tap flow, validates lineup">
+          <p>Tap <Pill tone="purple">SUBSTITUTION</Pill> then:</p>
+          <Step n={1}><strong>Who's OFF?</strong> Picker shows only players on the field.</Step>
+          <Step n={2}><strong>Who's ON?</strong> Picker shows only bench players (with minutes played so far so you can spread time fairly).</Step>
+          <p>If the player coming off is the current keeper, you'll be prompted to pick a new GK immediately.</p>
+          <p>To change the keeper without subbing anyone, tap <Pill tone="amber">SWAP GK</Pill>. You can pick from the entire squad (field <em>or</em> bench).</p>
+          <p className="text-xs text-stone-500">The system rejects impossible subs — you can't take the same player off twice, and you can't sub someone in who's already on the field.</p>
+        </Section>
+
+        <Section id="minutes" emoji="⏲" title="5 · Tracking minutes played" summary="Make sure no one sits all game">
+          <p>Tap <Pill>⏱ MINUTES</Pill> on the action screen at any time to see live minutes for every squad player, sorted highest → lowest. Use it before each sub so you can keep playing time balanced.</p>
+          <p>The substitution ON picker also shows each bench player's current minutes, so you can sub on whoever needs the time.</p>
+        </Section>
+
+        <Section id="scoring" emoji="📊" title="6 · How scores are calculated" summary="Four pillars · normalized per 20 min">
+          <p>Every player gets an <strong>overall score</strong> built from four pillars:</p>
+          <ul className="list-disc pl-5 space-y-1">
+            <li><Pill tone="lime">ATK</Pill> Attacking — goals, assists, key passes, shots.</li>
+            <li><Pill tone="sky">DEF</Pill> Defending — saves, blocks, ball wins, 1v1s, clean sheet (GK).</li>
+            <li><Pill tone="amber">DEC</Pill> Decisions — give &amp; go, gates, holds-ball/turnover penalties.</li>
+            <li><Pill>INV</Pill> Involvement — sheer number of actions per minute on the pitch.</li>
+          </ul>
+          <p>Each pillar is normalized to a "per 20 minutes" rate so a substitute who plays 10 minutes is compared fairly against a starter who plays 40.</p>
+          <p>Outfield players use a balanced blend; goalkeepers use a defence-heavy blend (DEF counts ~55%, ATK only ~10%).</p>
+        </Section>
+
+        <Section id="weights" emoji="⚙" title="7 · Tuning scoring weights" summary="Adjust how much each action is worth">
+          <p>From Home tap <Pill>⚙ SCORING</Pill>. Two tabs:</p>
+          <ul className="list-disc pl-5 space-y-1">
+            <li><strong>ACTIONS</strong> — points per action. The same values apply to outfield players and the keeper.</li>
+            <li><strong>PILLARS</strong> — how much each pillar (ATK · DEF · DEC · INV) contributes to the overall score. Outfield and GK have separate mixes — the GK row is DEF-heavy because that's where keepers earn their rating. Each row should sum to 100% — the header turns red if it doesn't.</li>
+          </ul>
+          <p>Negative numbers (red boxes) penalize the score. Tap <Pill>RESET</Pill> in the top-right to restore defaults. All past games re-score live with the new weights — nothing is baked in.</p>
+        </Section>
+
+        <Section id="history" emoji="📜" title="8 · Past games & season stats" summary="Where to find recorded matches">
+          <p><strong>PAST GAMES</strong> list on Home shows every finished match with the result. Tap any game to see the timeline of every event, per-player scores, and minutes.</p>
+          <p>Tap <Pill>STATS</Pill> for season-aggregate per-player numbers — total minutes, goals, season performance score, etc.</p>
+          <p>To delete a game tap into it and use the trash button (top-right). To remove a single mis-logged event, tap the trash next to it in the event list.</p>
+        </Section>
+
+        <Section id="tips" emoji="💡" title="9 · Tips for coaches" summary="Get the most out of the app">
+          <ul className="list-disc pl-5 space-y-1.5">
+            <li><strong>Pre-load your squad</strong> at the field before warm-ups. It only takes a minute and you won't have to fiddle once the whistle blows.</li>
+            <li><strong>One person, one phone.</strong> Don't have two coaches both logging on different devices — duplicates will appear.</li>
+            <li><strong>Log events generously.</strong> Even rough tallies are useful for season trends. Missed one? No problem — undo is for the most recent only, so just keep going.</li>
+            <li><strong>Use ⏱ MINUTES</strong> early in the 2nd half — it makes sub decisions much faster.</li>
+            <li><strong>Don't stress accuracy.</strong> The pillars normalize across players so even imperfect logging produces useful relative scores.</li>
+            <li><strong>Reset welcome:</strong> If another coach takes over the device, clear <code>stompers_welcome_dismissed</code> in browser storage (or use a fresh browser profile) to show this guide on first launch.</li>
+          </ul>
+        </Section>
+
+        <Section id="data" emoji="☁" title="10 · Where data lives" summary="Cloud + offline behavior">
+          <p>The deployed web app stores everything in Firebase (a Google cloud database). Anyone with the URL is editing the <em>same</em> shared team data, in real time.</p>
+          <p>If your phone goes offline mid-game, you can keep logging — entries queue and sync when you reconnect. Just don't close the tab before the sync completes.</p>
+        </Section>
+
+        <Section id="install" emoji="📲" title="11 · Install on your phone" summary="iPhone + Android — feels like a real app">
+          <p>The app is a <strong>PWA</strong> — install it to your home screen and it launches fullscreen with its own icon, no browser bar, and works offline.</p>
+          <p className="text-xs text-stone-500">Tap the green <Pill tone="lime">📲 INSTALL</Pill> button on the home screen at any time to open these steps.</p>
+
+          <div className="bg-stone-50 border border-stone-200 rounded-xl p-3 mt-2">
+            <div className="font-display text-sm text-stone-700 mb-2">📱 iPhone &amp; iPad (Safari only)</div>
+            <Step n={1}>Open the app in <strong>Safari</strong> (not Chrome — Apple doesn't allow other browsers to install PWAs on iOS).</Step>
+            <Step n={2}>Tap the <strong>Share</strong> button <Pill>⬆</Pill> at the bottom of Safari.</Step>
+            <Step n={3}>Scroll down and tap <strong>Add to Home Screen</strong>.</Step>
+            <Step n={4}>Confirm with <strong>Add</strong> in the top-right. Done!</Step>
+          </div>
+
+          <div className="bg-stone-50 border border-stone-200 rounded-xl p-3 mt-2">
+            <div className="font-display text-sm text-stone-700 mb-2">🤖 Android (Chrome, Edge, Samsung Internet)</div>
+            <p className="text-sm">On most Android browsers a one-tap install banner appears the first time you visit. If you missed it:</p>
+            <Step n={1}>Tap the <strong>⋮</strong> menu (top-right of the browser).</Step>
+            <Step n={2}>Tap <strong>Install app</strong> (or <strong>Add to Home screen</strong>).</Step>
+            <Step n={3}>Confirm <strong>Install</strong>.</Step>
+            <p className="text-xs text-stone-500 mt-1">After install, launch from the home-screen icon — it runs fullscreen with no browser UI.</p>
+          </div>
+
+          <p className="text-xs text-stone-500 mt-2">Sharing the app with another parent or coach? Just send them the same URL — they install on their own device and see the same shared team data in real time.</p>
+        </Section>
+
+        <Section id="live" emoji="📡" title="12 · Public scoreboard & coach access" summary="How URLs are split between parents and coaches">
+          <p>The site has <strong>three URLs</strong>, each for a different audience:</p>
+          <div className="bg-stone-50 border border-stone-200 rounded-xl p-3 mt-2 text-sm space-y-2">
+            <div>
+              <div className="font-display text-sm text-stone-700">👩‍👦 Parents — public scoreboard</div>
+              <div className="text-xs text-stone-600">The bare URL (e.g. <code>stompers2016.com</code>) shows the live or most recent game scoreboard plus a list of all past matches. First name + jersey number only — no full names.</div>
+            </div>
+            <div>
+              <div className="font-display text-sm text-stone-700">📎 Share a specific game</div>
+              <div className="text-xs text-stone-600">Tap <Pill tone="lime">📡 SHARE</Pill> on any game to copy a link like <code>?live=GAME_ID</code> — great for tournament recaps or revisiting a past match in a TeamSnap event post.</div>
+            </div>
+            <div>
+              <div className="font-display text-sm text-stone-700">🔑 Coaches — password-gated app</div>
+              <div className="text-xs text-stone-600">Coach app lives at <code>?coach</code> (e.g. <code>stompers2016.com/?coach</code>). Bookmark this URL on your phone — enter the coach password once and it remembers your device.</div>
+            </div>
+          </div>
+          <p className="text-xs text-stone-500 mt-2">Parents never need a password or to install anything — they just open the bare URL and bookmark it. Coaches install the PWA on the <code>?coach</code> URL for the full app experience.</p>
+        </Section>
+
+        <div className="text-center text-xs text-stone-400 pt-2 pb-1">
+          Tap a row to expand · {String.fromCharCode(169)} LaSalle Stompers
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Header({ title, onBack, right }) {
+  return (
+    <div className="bg-white border-b border-stone-200 px-4 pt-12 pb-3 flex items-center gap-3">
+      <button onClick={onBack} className="w-10 h-10 rounded-full bg-stone-100 flex items-center justify-center active:scale-95">
+        <ChevronLeft className="w-5 h-5" />
+      </button>
+      <h1 className="font-display text-2xl flex-1">{title}</h1>
+      {right}
+    </div>
+  );
+}
+
+/* =========================================================================
+   LIVE SCOREBOARD (public, read-only)
+   Two entry points, both render <LiveScoreboard> internally:
+     - <LiveScorePage gameId> — used by ?live=<gameId> deep-links.
+         Subscribes to ONE game doc by id.
+     - <PublicHomePage>       — used by the bare root URL (no params).
+         Subscribes to ALL games, auto-picks active or most-recent finished,
+         and renders a "Past matches" list under the main scoreboard.
+   Privacy: scoreboard shows first name + jersey number only — never last names,
+   never pillar events, rosters, or weights.
+   Auth: existing anonymous Firebase auth covers public viewers transparently.
+   ========================================================================= */
+function LiveScorePage({ gameId }) {
+  const [game, setGame] = useState(null);
+  const [roster, setRoster] = useState([]);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.fbDb || !window.fbReady) {
+      setError('This live link only works on the deployed app.');
+      return;
+    }
+    let unsubGame = null, unsubRoster = null;
+    window.fbReady.then((ok) => {
+      if (!ok) { setError('Could not connect to Firebase.'); return; }
+      const db = window.fbDb;
+      const teamRef = db.collection('teams').doc('main');
+      unsubGame = teamRef.collection('games').doc(gameId).onSnapshot(
+        (snap) => {
+          if (!snap.exists) { setError('Game not found.'); return; }
+          setGame({ ...snap.data(), id: snap.id });
+        },
+        (err) => setError(err.message || 'Could not load game.')
+      );
+      unsubRoster = teamRef.onSnapshot(
+        (snap) => {
+          if (snap.exists) {
+            const data = snap.data();
+            if (Array.isArray(data.roster)) setRoster(data.roster);
+          }
+        },
+        () => {}
+      );
+    });
+    return () => { if (unsubGame) unsubGame(); if (unsubRoster) unsubRoster(); };
+  }, [gameId]);
+
+  if (error) return <PublicErrorScreen msg={error} />;
+  if (!game) return <PublicLoadingScreen />;
+  return (
+    <div className="min-h-screen bg-stone-50 pb-12">
+      <style>{FONT_STYLES}</style>
+      <LiveScoreboard game={game} roster={roster} />
+    </div>
+  );
+}
+
+/* ---- PublicHomePage: default URL for parents ---- */
+function PublicHomePage() {
+  const [games, setGames] = useState([]);
+  const [roster, setRoster] = useState([]);
+  const [loaded, setLoaded] = useState(false);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.fbDb || !window.fbReady) {
+      setError('App not loaded.');
+      return;
+    }
+    let unsubGames = null, unsubRoster = null;
+    window.fbReady.then((ok) => {
+      if (!ok) { setError('Could not connect to Firebase.'); return; }
+      const teamRef = window.fbDb.collection('teams').doc('main');
+      unsubGames = teamRef.collection('games').onSnapshot(
+        (snap) => {
+          const list = snap.docs.map((d) => ({ ...d.data(), id: d.id }));
+          list.sort((a, b) => new Date(b.date) - new Date(a.date));
+          setGames(list);
+          setLoaded(true);
+        },
+        (err) => { setError(err.message || 'Could not load games.'); setLoaded(true); }
+      );
+      unsubRoster = teamRef.onSnapshot(
+        (snap) => {
+          if (snap.exists) {
+            const data = snap.data();
+            if (Array.isArray(data.roster)) setRoster(data.roster);
+          }
+        },
+        () => {}
+      );
+    });
+    return () => { if (unsubGames) unsubGames(); if (unsubRoster) unsubRoster(); };
+  }, []);
+
+  if (error) return <PublicErrorScreen msg={error} />;
+  if (!loaded) return <PublicLoadingScreen />;
+
+  const active = games.find((g) => g.status === 'active');
+  const finished = games.filter((g) => g.status === 'finished');
+  const featured = active || finished[0] || null;
+  const past = active ? finished : finished.slice(1);
+
+  return (
+    <div className="min-h-screen bg-stone-50 pb-12 relative">
+      <style>{FONT_STYLES}</style>
+      <a
+        href="./?coach"
+        className="absolute top-3 right-3 z-10 bg-white/15 hover:bg-white/25 text-white text-xs font-bold tracking-widest px-3 py-2 rounded-lg backdrop-blur-sm border border-white/20"
+      >
+        🔑 COACH
+      </a>
+      {featured ? (
+        <LiveScoreboard game={featured} roster={roster} />
+      ) : (
+        <div className="stripes-bg text-white px-4 pt-14 pb-12 text-center">
+          <img
+            src="./stompers_logo.png"
+            alt="LaSalle Stompers"
+            className="w-24 h-24 mx-auto mb-4 drop-shadow-lg"
+            onError={(e) => { e.currentTarget.style.display = 'none'; }}
+          />
+          <div className="font-display text-4xl text-lime-400">LASALLE STOMPERS</div>
+          <div className="text-white/60 text-sm font-bold tracking-widest mt-1">U10 BOYS · 2016 SQUAD</div>
+          <div className="mt-10 inline-block bg-white/10 rounded-2xl px-6 py-5">
+            <div className="font-display text-2xl">No live match right now</div>
+            <div className="text-white/60 text-sm mt-1">Check back on game day.</div>
+          </div>
+        </div>
+      )}
+      {past.length > 0 && (
+        <div className="px-4 pt-6 max-w-md mx-auto">
+          <h3 className="font-display text-xl text-stone-700 mb-2">PAST MATCHES</h3>
+          <div className="bg-white border border-stone-200 rounded-2xl divide-y divide-stone-100 overflow-hidden">
+            {past.map((g) => {
+              const r = g.ourScore > g.oppScore ? 'W' : g.ourScore < g.oppScore ? 'L' : 'D';
+              const rColor = r === 'W' ? 'bg-lime-500 text-white' : r === 'L' ? 'bg-red-500 text-white' : 'bg-stone-300 text-stone-800';
+              return (
+                <a key={g.id} href={`./?live=${g.id}`} className="flex items-center gap-3 p-3 active:bg-stone-50">
+                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-display text-sm ${rColor}`}>{r}</div>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-bold text-sm truncate">vs {g.opponent}</div>
+                    <div className="text-xs text-stone-500 truncate">{g.tournament || 'Festival'} · {formatDate(g.date)} · {g.isHome ? 'Home' : 'Away'}</div>
+                  </div>
+                  <div className="font-display text-lg tabular-nums text-stone-900">{g.ourScore}–{g.oppScore}</div>
+                  <ChevronRight className="w-4 h-4 text-stone-400" />
+                </a>
+              );
+            })}
+          </div>
+          <div className="text-center text-xs text-stone-400 mt-6">
+            © LaSalle Stompers · <a href="./?coach" className="underline">Coach access</a>
+          </div>
+        </div>
+      )}
+      {past.length === 0 && (
+        <div className="text-center text-xs text-stone-400 mt-8">
+          © LaSalle Stompers · <a href="./?coach" className="underline">Coach access</a>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ---- shared public-mode helpers ---- */
+function PublicErrorScreen({ msg }) {
+  return (
+    <div className="min-h-screen stripes-bg text-white flex items-center justify-center p-6">
+      <style>{FONT_STYLES}</style>
+      <div className="bg-white/10 rounded-2xl p-6 max-w-sm text-center">
+        <div className="font-display text-3xl mb-2">⚠ {msg}</div>
+        <div className="text-white/60 text-sm">Double-check the link with the coach.</div>
+      </div>
+    </div>
+  );
+}
+function PublicLoadingScreen() {
+  return (
+    <div className="min-h-screen stripes-bg text-white flex items-center justify-center">
+      <style>{FONT_STYLES}</style>
+      <div className="font-display text-2xl text-white/60">Loading…</div>
+    </div>
+  );
+}
+
+/* ---- LiveScoreboard: pure render given game + roster ---- */
+function LiveScoreboard({ game, roster }) {
+  const [, setTick] = useState(0);
+
+  useEffect(() => {
+    if (!game || game.status !== 'active' || !game.clockRunning) return;
+    const id = setInterval(() => setTick((t) => t + 1), 1000);
+    return () => clearInterval(id);
+  }, [game?.status, game?.clockRunning]);
+
+  // Pair each GOAL with the immediately-following ASSIST (the coach app prompts
+  // for ASSIST right after GOAL, so they're adjacent within ~60s).
+  const feed = useMemo(() => {
+    if (!game) return [];
+    const events = [...(game.events || [])].sort((a, b) => a.at - b.at);
+    const out = [];
+    let ourRun = 0, oppRun = 0;
+    for (let i = 0; i < events.length; i++) {
+      const e = events[i];
+      if (e.type === 'GOAL') {
+        ourRun++;
+        let assist = null;
+        for (let j = i + 1; j < events.length; j++) {
+          const n = events[j];
+          if (n.at - e.at > 60000) break;
+          if (n.type === 'ASSIST' && n.playerId && n.playerId !== e.playerId) { assist = n; break; }
+          if (n.type === 'GOAL' || n.type === 'OPP_GOAL') break;
+        }
+        out.push({ kind: 'us', at: e.at, elapsed: e.elapsed, period: e.period, scorerId: e.playerId, assistId: assist?.playerId || null, ourRun, oppRun });
+      } else if (e.type === 'OPP_GOAL') {
+        oppRun++;
+        out.push({ kind: 'opp', at: e.at, elapsed: e.elapsed, period: e.period, ourRun, oppRun });
+      }
+    }
+    return out;
+  }, [game]);
+
+  const elapsed = computeElapsed(game);
+  const mins = Math.floor(elapsed / 60);
+  const isActive = game.status === 'active';
+  const isFinished = game.status === 'finished';
+  let statusLabel;
+  if (isFinished) statusLabel = 'FULL TIME';
+  else if (isActive && !game.clockRunning) statusLabel = game.period >= 2 ? 'PAUSED' : 'HALF TIME';
+  else if (isActive) statusLabel = `${mins}'`;
+  else statusLabel = 'NOT STARTED';
+
+  const HOME_NAME = 'Stompers';
+  const homeIsUs = !!game.isHome;
+  const leftName = homeIsUs ? HOME_NAME : (game.opponent || 'Opponent');
+  const rightName = homeIsUs ? (game.opponent || 'Opponent') : HOME_NAME;
+  const leftScore = homeIsUs ? game.ourScore : game.oppScore;
+  const rightScore = homeIsUs ? game.oppScore : game.ourScore;
+
+  // Privacy: first name + jersey number only — never last names on public pages.
+  const nameOf = (pid) => {
+    const p = roster.find((r) => r.id === pid);
+    if (!p) return 'Unknown';
+    const first = (p.name || '').split(/\s+/)[0] || p.name || 'Player';
+    return `${first} #${p.number || '?'}`;
+  };
+
+  return (
+    <>
+      <div className="stripes-bg text-white px-4 pt-10 pb-6">
+        <div className="text-center text-xs uppercase tracking-widest text-white/60 mb-1">
+          {game.tournament || 'Match'} · {formatDate(game.date)} · {homeIsUs ? 'Home' : 'Away'}
+        </div>
+        <div className="flex items-center justify-center gap-3 mt-4">
+          <div className="flex-1 text-right">
+            <div className="font-display text-2xl truncate">{leftName}</div>
+            {homeIsUs && <div className="text-xs text-lime-400 font-bold mt-0.5">HOME</div>}
+          </div>
+          <div className="font-display text-6xl tabular-nums px-3">
+            {leftScore}<span className="text-white/40 mx-2">–</span>{rightScore}
+          </div>
+          <div className="flex-1 text-left">
+            <div className="font-display text-2xl truncate">{rightName}</div>
+            {!homeIsUs && <div className="text-xs text-lime-400 font-bold mt-0.5">HOME</div>}
+          </div>
+        </div>
+        <div className="text-center mt-4">
+          {isActive && game.clockRunning && (
+            <span className="inline-flex items-center gap-2 bg-red-500/20 border border-red-400/40 text-red-200 px-3 py-1 rounded-full text-xs font-bold">
+              <span className="w-2 h-2 rounded-full bg-red-400 animate-pulse"></span>
+              LIVE · {statusLabel}
+            </span>
+          )}
+          {isActive && !game.clockRunning && (
+            <span className="inline-block bg-yellow-500/20 border border-yellow-400/40 text-yellow-200 px-3 py-1 rounded-full text-xs font-bold">
+              {statusLabel}
+            </span>
+          )}
+          {isFinished && (
+            <span className="inline-block bg-white/15 border border-white/20 text-white px-3 py-1 rounded-full text-xs font-bold">
+              FULL TIME
+            </span>
+          )}
+        </div>
+      </div>
+      <div className="px-4 pt-5 max-w-md mx-auto">
+        <h3 className="font-display text-xl text-stone-700 mb-2">GOALS</h3>
+        {feed.length === 0 ? (
+          <div className="bg-white border border-stone-200 rounded-2xl p-6 text-center text-sm text-stone-500">
+            No goals yet.
+          </div>
+        ) : (
+          <div className="bg-white border border-stone-200 rounded-2xl divide-y divide-stone-100 overflow-hidden">
+            {feed.map((row, idx) => {
+              const minute = Math.max(1, Math.round((row.elapsed || 0) / 60));
+              const isHt = idx > 0 && feed[idx - 1].period === 1 && row.period === 2;
+              return (
+                <React.Fragment key={idx}>
+                  {isHt && (
+                    <div className="bg-stone-100 px-3 py-1.5 text-center text-xs font-bold text-stone-500 uppercase tracking-widest">
+                      — Half Time —
+                    </div>
+                  )}
+                  {row.kind === 'us' ? (
+                    <div className="p-3 flex items-start gap-3">
+                      <div className="w-10 text-right font-display text-lg text-stone-400 tabular-nums">{minute}'</div>
+                      <div className="text-2xl">⚽</div>
+                      <div className="flex-1 min-w-0">
+                        <div className="font-bold text-stone-900 truncate">{nameOf(row.scorerId)}</div>
+                        {row.assistId && (
+                          <div className="text-xs text-stone-500 truncate">🅰️ {nameOf(row.assistId)}</div>
+                        )}
+                      </div>
+                      <div className="font-display text-sm text-lime-600 tabular-nums">{row.ourRun}–{row.oppRun}</div>
+                    </div>
+                  ) : (
+                    <div className="p-3 flex items-start gap-3 bg-red-50/40">
+                      <div className="w-10 text-right font-display text-lg text-stone-400 tabular-nums">{minute}'</div>
+                      <div className="text-2xl">🚨</div>
+                      <div className="flex-1 min-w-0">
+                        <div className="font-bold text-stone-900 truncate">{game.opponent || 'Opponent'}</div>
+                      </div>
+                      <div className="font-display text-sm text-red-600 tabular-nums">{row.ourRun}–{row.oppRun}</div>
+                    </div>
+                  )}
+                </React.Fragment>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    // ===== APP CODE ENDS =====
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
